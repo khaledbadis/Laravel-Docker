@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phases 1–2 complete and verified. Next: Phase 3, Livewire and Tailwind integration. Phases 3–9 have not started.
+Status: Phases 1–3 complete and verified. Next: Phase 4, accounts and authorization. Phases 4–9 have not started.
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Registry manifests resolved on 2026-09-13. The Dockerfile and Compose file pin o
 | Nginx | 1.30.4, Alpine | Resolved official stable series; small proxy image |
 | Node | 24.21.0 LTS, npm 11.19.0, Debian Bookworm slim | Supported LTS runtime for Vite; exact image fixed by digest |
 
-Phase 2 installed Laravel skeleton v13.10.1 and resolved Laravel Framework v13.31.0; PHP dependencies are recorded in `composer.lock`. Frontend dependency installation and its lockfile follow in Phase 3. Pinning base-image digests does not freeze Debian packages installed from live apt repositories.
+Phase 2 installed Laravel skeleton v13.10.1 and resolved Laravel Framework v13.31.0; PHP dependencies are recorded in `composer.lock`. Phase 3 adds Livewire 4.4.4 to that lockfile and pins Tailwind 4.3.3 / Vite 8.3.0 in `package-lock.json`. Pinning base-image digests does not freeze Debian packages installed from live apt repositories.
 
 References: [Laravel server requirements](https://laravel.com/docs/13.x/deployment), [Node release lifecycle](https://nodejs.org/en/about/previous-releases), and official [PHP](https://hub.docker.com/_/php), [Composer](https://hub.docker.com/_/composer), [PostgreSQL](https://hub.docker.com/_/postgres), and [Nginx](https://hub.docker.com/_/nginx) images.
 
@@ -109,10 +109,10 @@ Implementation notes: the original Phase 1 Nginx mapping required no changes. St
 
 ### Phase 3 — Integrate Livewire and Tailwind
 
-- [ ] Install Livewire explicitly and create the base Blade layout and a small interactive component.
-- [ ] Configure Tailwind with Vite, required CSS sources, and asset entry points.
-- [ ] Configure Vite container binding and browser-facing hot reload addresses.
-- [ ] Verify frontend development mode and compiled production assets independently.
+- [x] Install Livewire explicitly and create the base Blade layout and a small interactive component.
+- [x] Configure Tailwind with Vite, required CSS sources, and asset entry points.
+- [x] Configure Vite container binding and browser-facing hot reload addresses.
+- [x] Verify frontend development mode and compiled production assets independently.
 
 Acceptance: a Livewire action updates the page; Tailwind styles render; hot reload works from the host browser; a production build works with the Node service stopped and without a stale Vite hot file.
 
@@ -201,9 +201,10 @@ Compose files must have clearly documented invocation rules so development setti
 | 0 | Complete | Specification, README, and initial guide created |
 | 1 | Complete (2026-09-13) | Docker 29.7.2 / Compose 5.5.0 on x86_64; configuration valid; PHP image built; PostgreSQL healthy; required extensions loaded; authenticated PDO query through `db` succeeded; PHP and Node files owned by host UID/GID 1000; Nginx config valid; `/healthz` 200, `/` 404 pending Laravel, `/.env` 403 |
 | 2 | Complete (2026-09-13) | Laravel 13.31.0; 3 PostgreSQL migrations applied and rerun idempotently; `/` and `/up` returned 200; private files returned 403/404; cache value, session record, and migration history survived full container recreation; Composer validation/platform checks, 2 scaffold tests, and Pint passed |
-| 3–9 | Not started | Livewire, application features, frontend dependency installation, and deployment remain pending |
+| 3 | Complete (2026-09-13) | Livewire 4.4.4, Tailwind 4.3.3, Vite 8.3.0; 4 tests / 10 assertions and Pint passed; npm ci/build passed; browser increment/reset worked; CSS hot replacement preserved state and Blade changes auto-refreshed; compiled styling/actions worked with Node stopped and no hot file |
+| 4–9 | Not started | Accounts, task features, CI, production images, and deployment remain pending |
 
-Phase 2 leaves `app`, `db`, and `web` running locally, serving Laravel's default welcome page. Node is available on demand. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. The temporary cache marker used to verify persistence was removed. The full clean-checkout rehearsal remains scheduled for Phase 7.
+Phase 3 leaves `app`, `db`, and `web` running with compiled assets and Node stopped. The home page serves a temporary, nonpersistent counter using a shared Blade layout. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
 
 ## Official references
 

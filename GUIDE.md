@@ -1,6 +1,6 @@
 # Laravel and Docker: project guide
 
-This guide explains the project design. Docker and the Laravel foundation are implemented; Livewire and deployment are upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+This guide explains the project design. Docker, Laravel, Livewire, and Tailwind are integrated; deployment is an upcoming phase. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## What each tool does
 
@@ -56,7 +56,7 @@ Production images contain the source and compiled assets. They do not rely on mo
 
 ## Manual Laravel setup
 
-Composer installs PHP dependencies. We created Laravel's plain skeleton inside the PHP container; Livewire will be installed separately. This preserves Laravel's standard structure while making setup steps visible. See [Laravel installation](https://laravel.com/docs/13.x/installation) and [Livewire installation](https://livewire.laravel.com/docs/4.x/installation).
+Composer installs PHP dependencies. We created Laravel's plain skeleton inside the PHP container; Livewire was then installed separately through Composer. This preserves Laravel's standard structure while making setup steps visible. See [Laravel installation](https://laravel.com/docs/13.x/installation) and [Livewire installation](https://livewire.laravel.com/docs/4.x/installation).
 
 The bootstrap used `create-project` in an empty temporary directory because the repository already contained Docker files and documentation. `--no-install` downloaded only the skeleton; `--no-scripts` prevented its automatic key generation and SQLite migration setup. We copied the application files, then ran the setup steps ourselves. See [Composer's command reference](https://getcomposer.org/doc/03-cli.md#create-project).
 
@@ -76,7 +76,7 @@ Artisan is Laravel's command-line tool for tasks such as generating classes and 
 | --- | --- |
 | `public/index.php` | Public PHP entry point executed by PHP-FPM |
 | `bootstrap/app.php` | Registers routing, middleware, exception handling, and `/up` |
-| `routes/web.php` | Browser routes; `/` currently renders the welcome view |
+| `routes/web.php` | Browser routes; `/` currently renders the Livewire counter |
 | `app/` | Application classes, including models and later Livewire components |
 | `config/` | Settings resolved from `.env` and documented defaults |
 | `resources/` | Blade templates and frontend source |
@@ -123,9 +123,29 @@ Container recreation replaces processes and container filesystems. PostgreSQL da
 
 Vite serves frontend assets with hot reload during development. Its server must listen on an interface reachable outside its container, while its browser-facing URL must be reachable from the host browser.
 
-The `frontend` Compose profile keeps Node optional. Laravel now includes frontend source, but npm dependencies have not been installed. The welcome page includes fallback CSS so it can render immediately. Phase 3 will install and verify the frontend dependencies and enable the long-running Vite process.
+The `frontend` Compose profile keeps Node optional. Explicitly targeting `node` starts Vite. `npm ci` installs the exact dependency versions in `package-lock.json`; `npm run build` writes compiled files and a manifest to `public/build`.
 
 Production uses compiled, versioned assets, so there is no running Vite or Node service. Tailwind is integrated through Vite; see the [official installation guide](https://tailwindcss.com/docs/installation/using-vite).
+
+## Livewire components and the shared layout
+
+`Counter.php` is a full-page component: its public property holds the count, its methods handle actions, and `render()` selects the Blade view. The `Layout` attribute wraps that view in `layouts/app.blade.php`. `wire:click` calls PHP through a Livewire request; the returned HTML updates the component without a full page reload.
+
+`wire:loading.attr="disabled"` prevents another click while a request is in flight. The count is `Locked`, so browser requests cannot assign an arbitrary value directly; server actions can still change it. This is a demo of component state, not task persistence or user authorization. The count resets on refresh.
+
+The layout includes `@vite`, `@livewireStyles`, and `@livewireScripts` explicitly so their roles are visible. Livewire supplies Alpine.js already; importing another Alpine instance can cause conflicts. No Livewire configuration file is needed for these conventions. See [Livewire installation](https://livewire.laravel.com/docs/4.x/installation).
+
+## How asset mode is selected
+
+When Vite runs, Laravel's Vite plugin writes its browser-facing URL to `public/hot`. `@vite` uses that file to load development assets and connect hot reload. Without it, Laravel reads `public/build/manifest.json` and generates links to the compiled files Nginx serves.
+
+The Node service runs Vite directly with an init process, allowing stop signals to reach Vite and its cleanup handler. A normal stop deletes `public/hot`; a forced kill may leave it behind. This is why a stale hot file can break asset loading even after a successful build.
+
+Vite binds `0.0.0.0:5173` inside Docker, while browsers use the hostname in `APP_URL` and port in `VITE_PORT`. The WebSocket uses that same published port. These are different addresses for different sides of the container boundary.
+
+Tailwind's Vite plugin generates CSS from class names in our Blade, JavaScript, Livewire PHP, and Laravel pagination sources. Write complete class names so they can be detected. `@theme` sets the font stack; system fonts avoid an external font service. CSS hot updates preserve the counter state; Blade auto-refresh reloads the page and resets it.
+
+The tests exercise PHP/Livewire behavior without Vite. Browser checks separately verify scripts, styling, hot reload, and compiled assets; PHP tests alone cannot prove those work.
 
 ## Permissions and logs
 

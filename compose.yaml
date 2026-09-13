@@ -55,6 +55,7 @@ services:
   node:
     image: node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
     profiles: ["frontend"]
+    init: true
     user: "${LOCAL_UID:-1000}:${LOCAL_GID:-1000}"
     working_dir: /var/www/html
     environment:
@@ -63,7 +64,8 @@ services:
       - .:/var/www/html
     ports:
       - "127.0.0.1:${VITE_PORT:-5173}:5173"
-    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
+    # Run Vite directly so it receives SIGTERM and removes public/hot on stop.
+    command: ["node", "node_modules/vite/bin/vite.js"]
     networks:
       - backend
 

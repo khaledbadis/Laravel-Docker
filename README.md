@@ -2,7 +2,7 @@
 
 A learning project: manually assemble a Laravel, Livewire, Tailwind, and PostgreSQL todo app, then deploy it using Docker on self-managed infrastructure.
 
-**Current state:** Phase 2 is complete. Laravel is installed and connected to PostgreSQL, with database-backed sessions and cache. Livewire integration and the todo interface come in later phases.
+**Current state:** Phase 3 is complete. Laravel, Livewire, Tailwind, and Vite are integrated. The home page contains a temporary interactive counter; authentication and todo features follow in later phases.
 
 ## Project documents
 
@@ -55,11 +55,13 @@ docker compose up -d --wait
 docker compose exec app composer install --no-interaction --prefer-dist
 docker compose exec app php artisan key:generate
 docker compose exec app php artisan migrate --no-interaction
+docker compose run --rm --no-deps node npm ci
+docker compose run --rm --no-deps node npm run build
 docker compose ps
 curl --fail http://localhost:8080/up
 ```
 
-Open [http://localhost:8080](http://localhost:8080) to see Laravel's welcome page. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
+Open [http://localhost:8080](http://localhost:8080) to try the Livewire counter. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
 
 Generate the application key only when setting up a new `.env` with an empty `APP_KEY`. Keep an existing key when updating or restarting the app. Migrations create the `users`, `sessions`, `cache`, and other standard Laravel tables; rerunning `migrate` applies only pending migrations.
 
@@ -67,7 +69,7 @@ Generate the application key only when setting up a new `.env` with an empty `AP
 
 `composer.lock` records the PHP dependency versions. Use `composer install` after pulling code; use `composer update` only for deliberate dependency upgrades. There is no need to rerun `composer create-project` after cloning this repository.
 
-The scaffold includes frontend source and `package.json`, but npm dependencies and Livewire have not been installed. The welcome page includes fallback styles, so it works before Vite is configured. `node` stays behind the `frontend` profile until Phase 3. You can inspect the tooling now:
+`package-lock.json` pins frontend dependencies. Use `npm ci` after cloning or pulling dependency changes. The page requires either compiled assets or a running Vite server; the scaffold fallback styles have been removed. You can inspect the tooling with:
 
 ```bash
 docker compose run --rm --no-deps node node --version
@@ -103,6 +105,39 @@ docker compose down
 
 Do not add `--volumes`/`-v` to `down` unless you deliberately want to delete the local database. Keep `COMPOSE_PROJECT_NAME` stable so Compose finds the same named volume. Changing initialization credentials in `.env` does not change accounts already stored in PostgreSQL.
 
+## Frontend development and compiled assets
+
+Start hot reload after installing dependencies:
+
+```bash
+docker compose up -d node
+docker compose logs --tail=30 node
+```
+
+Keep the browser on [http://localhost:8080](http://localhost:8080). Vite serves assets on port 5173; it does not serve the Laravel page. CSS changes update in place; Blade changes trigger a page refresh. The counter resets on a full refresh and is not stored in PostgreSQL.
+
+To use compiled assets with Node stopped:
+
+```bash
+docker compose stop node
+docker compose run --rm --no-deps node npm run build
+```
+
+Reload the browser afterward. A normal stop removes `public/hot`. If Vite was killed abruptly and the page still points at port 5173, confirm the Node service is stopped and remove only the generated `public/hot` file, then reload. Never commit `public/hot`, `public/build`, or `node_modules`.
+
+`APP_URL` supplies Vite's allowed browser origin and hostname; `VITE_PORT` supplies its published port and browser WebSocket port. The container always listens on port 5173. After changing these settings in `.env`, run `docker compose up -d --force-recreate node`. This configuration targets local HTTP development; production asset builds do not use these development URLs.
+
+## Phase 3 implementation
+
+Livewire was installed explicitly with `docker compose exec app composer require 'livewire/livewire:^4.0'`. Future clones install it from `composer.lock`.
+
+- `app/Livewire/Counter.php`: PHP state, increment/reset actions, and layout selection.
+- `resources/views/livewire/counter.blade.php`: interactive component markup.
+- `resources/views/layouts/app.blade.php`: shared page layout and explicit Vite/Livewire asset directives.
+- `resources/css/app.css` and `vite.config.js`: Tailwind source discovery and Docker hot reload settings.
+
+We use system fonts and Livewire's bundled Alpine.js. No separate Alpine installation, external font download, or host process runner is needed.
+
 ## Current checks
 
 ```bash
@@ -112,7 +147,7 @@ docker compose exec app composer test
 docker compose exec app vendor/bin/pint --test
 ```
 
-The initial tests check the scaffold and a successful home response. They use in-memory session/cache stores and do not access a database. `phpunit.xml` reserves a separate PostgreSQL database/account named `todo_test`; it is not provisioned yet, so database-dependent tests will fail until Phase 5 sets it up. It never defaults to the development database. PostgreSQL integration and persistence are checked separately during Phase 2.
+The four tests check the scaffold, the home page Livewire component, counter actions, and rejection of direct changes to its locked property. The home test disables Vite integration, so the test suite does not require a running asset server. They use in-memory session/cache stores and do not access a database. `phpunit.xml` reserves a separate PostgreSQL database/account named `todo_test`; it is not provisioned yet, so database-dependent tests will fail until Phase 5 sets it up. It never defaults to the development database. PostgreSQL integration and persistence are checked separately during Phase 2.
 
 ## How Laravel was installed
 
@@ -126,8 +161,7 @@ The skeleton files were copied into the repository while preserving the existing
 
 ## Remaining operating instructions
 
-- **Phase 3:** Livewire installation, frontend dependencies, and Vite hot reload.
-- **Phase 7:** isolated PostgreSQL tests, formatting, and frontend builds.
+- **Phases 5–7:** isolated PostgreSQL tests and CI.
 - **Phases 8–9:** production Compose, releases, HTTPS, backups, restore, and rollback.
 
 `compose.yaml` and the current PHP image are development-only. Production will use a separate Compose file and image targets.
@@ -139,3 +173,5 @@ On 2026-09-13: Docker 29.7.2, Compose 5.5.0, Linux x86_64, PHP 8.4.25, Composer 
 Checks passed: image build, Compose startup, PostgreSQL health and authenticated PHP query, required PHP extensions, PHP/Node file ownership, Nginx configuration, health endpoint, and denial of `.env` access. See the spec for remaining phase checks.
 
 Laravel skeleton v13.10.1 resolved Laravel Framework v13.31.0; PHP dependencies are pinned in `composer.lock`. Phase 2 validation results are recorded in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+
+Phase 3 verified Livewire 4.4.4, Tailwind 4.3.3, and Vite 8.3.0: four tests (10 assertions), Pint, npm clean install/build, browser Livewire actions, CSS hot replacement, Blade auto-refresh, and compiled assets with Node stopped.
