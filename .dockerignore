@@ -1,4 +1,5 @@
 .git
+auth.json
 .env
 .env.*
 !.env.example

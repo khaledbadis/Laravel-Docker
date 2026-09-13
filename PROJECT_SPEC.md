@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phase 1 complete and verified. Next: Phase 2, manual Laravel installation. Phases 2–9 have not started.
+Status: Phases 1–2 complete and verified. Next: Phase 3, Livewire and Tailwind integration. Phases 3–9 have not started.
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Registry manifests resolved on 2026-09-13. The Dockerfile and Compose file pin o
 | Nginx | 1.30.4, Alpine | Resolved official stable series; small proxy image |
 | Node | 24.21.0 LTS, npm 11.19.0, Debian Bookworm slim | Supported LTS runtime for Vite; exact image fixed by digest |
 
-Application dependency lockfiles will be created during Phases 2–3. Pinning base-image digests does not freeze Debian packages installed from live apt repositories.
+Phase 2 installed Laravel skeleton v13.10.1 and resolved Laravel Framework v13.31.0; PHP dependencies are recorded in `composer.lock`. Frontend dependency installation and its lockfile follow in Phase 3. Pinning base-image digests does not freeze Debian packages installed from live apt repositories.
 
 References: [Laravel server requirements](https://laravel.com/docs/13.x/deployment), [Node release lifecycle](https://nodejs.org/en/about/previous-releases), and official [PHP](https://hub.docker.com/_/php), [Composer](https://hub.docker.com/_/composer), [PostgreSQL](https://hub.docker.com/_/postgres), and [Nginx](https://hub.docker.com/_/nginx) images.
 
@@ -97,13 +97,15 @@ Acceptance: Compose configuration validates; images build; PostgreSQL becomes he
 
 ### Phase 2 — Bootstrap Laravel manually
 
-- [ ] Create a plain Laravel app using containerized Composer. Use a temporary empty directory, then copy the skeleton without overwriting this project's documentation.
-- [ ] Configure `.env`, generate a local application key, select PostgreSQL, and run initial migrations explicitly.
-- [ ] Wire Nginx's document root to `public/` and FastCGI to PHP-FPM, with matching script paths in both containers.
-- [ ] Choose and document database-backed sessions and cache; ensure their tables exist.
-- [ ] Record exact clean-clone bootstrap commands in README.md.
+- [x] Create a plain Laravel app using containerized Composer. Use a temporary empty directory, then copy the skeleton without overwriting this project's documentation.
+- [x] Configure `.env`, generate a local application key, select PostgreSQL, and run initial migrations explicitly.
+- [x] Wire Nginx's document root to `public/` and FastCGI to PHP-FPM, with matching script paths in both containers.
+- [x] Choose and document database-backed sessions and cache; ensure their tables exist.
+- [x] Record exact clean-clone bootstrap commands in README.md.
 
 Acceptance: Laravel responds through Nginx; database migrations work; private files such as `.env` are inaccessible over HTTP; data survives container recreation; no host PHP, Composer, or Node installation is required.
+
+Implementation notes: the original Phase 1 Nginx mapping required no changes. Standard Laravel migrations supply session/cache tables. Host-oriented setup/dev scripts and Pail/Pao helpers were omitted. The scaffold includes frontend source, but npm and Livewire installation remain Phase 3 work. Initial smoke tests do not query a database; their forced PostgreSQL configuration reserves an unprovisioned `todo_test` database/account until Phase 5, avoiding the development database.
 
 ### Phase 3 — Integrate Livewire and Tailwind
 
@@ -198,9 +200,10 @@ Compose files must have clearly documented invocation rules so development setti
 | --- | --- | --- |
 | 0 | Complete | Specification, README, and initial guide created |
 | 1 | Complete (2026-09-13) | Docker 29.7.2 / Compose 5.5.0 on x86_64; configuration valid; PHP image built; PostgreSQL healthy; required extensions loaded; authenticated PDO query through `db` succeeded; PHP and Node files owned by host UID/GID 1000; Nginx config valid; `/healthz` 200, `/` 404 pending Laravel, `/.env` 403 |
-| 2–9 | Not started | No Laravel application code or deployment created yet |
+| 2 | Complete (2026-09-13) | Laravel 13.31.0; 3 PostgreSQL migrations applied and rerun idempotently; `/` and `/up` returned 200; private files returned 403/404; cache value, session record, and migration history survived full container recreation; Composer validation/platform checks, 2 scaffold tests, and Pint passed |
+| 3–9 | Not started | Livewire, application features, frontend dependency installation, and deployment remain pending |
 
-Phase 1 leaves `app`, `db`, and `web` running locally. Node is available as an on-demand service. Database persistence across recreation and Laravel request handling are checked in Phase 2; the current Nginx health endpoint is not an application readiness check.
+Phase 2 leaves `app`, `db`, and `web` running locally, serving Laravel's default welcome page. Node is available on demand. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. The temporary cache marker used to verify persistence was removed. The full clean-checkout rehearsal remains scheduled for Phase 7.
 
 ## Official references
 

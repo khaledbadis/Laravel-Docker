@@ -14,3 +14,8 @@
 /.vscode/
 .DS_Store
 *.log
+/auth.json
+/.phpactor.json
+/storage/pail/
+/public/fonts-manifest.dev.json
+/_ide_helper.php

@@ -1,6 +1,6 @@
 # Laravel and Docker: project guide
 
-This guide explains the project design. Docker foundations are implemented first; the Laravel and deployment sections describe upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+This guide explains the project design. Docker and the Laravel foundation are implemented; Livewire and deployment are upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## What each tool does
 
@@ -56,17 +56,46 @@ Production images contain the source and compiled assets. They do not rely on mo
 
 ## Manual Laravel setup
 
-Composer installs PHP dependencies. We will create Laravel's plain skeleton through Composer inside a container, then install Livewire explicitly and connect its layout and components ourselves. This preserves Laravel's standard structure while making setup steps visible. See [Laravel installation](https://laravel.com/docs/13.x/installation) and [Livewire installation](https://livewire.laravel.com/docs/4.x/installation).
+Composer installs PHP dependencies. We created Laravel's plain skeleton inside the PHP container; Livewire will be installed separately. This preserves Laravel's standard structure while making setup steps visible. See [Laravel installation](https://laravel.com/docs/13.x/installation) and [Livewire installation](https://livewire.laravel.com/docs/4.x/installation).
+
+The bootstrap used `create-project` in an empty temporary directory because the repository already contained Docker files and documentation. `--no-install` downloaded only the skeleton; `--no-scripts` prevented its automatic key generation and SQLite migration setup. We copied the application files, then ran the setup steps ourselves. See [Composer's command reference](https://getcomposer.org/doc/03-cli.md#create-project).
+
+| Step | What it changes |
+| --- | --- |
+| `composer install` | Creates `vendor/` from the locked PHP dependencies and discovers Laravel packages |
+| `php artisan key:generate` | Writes an encryption key into the local `.env` |
+| `php artisan migrate` | Applies pending schema migrations to PostgreSQL |
+
+The first dependency resolution created `composer.lock`; commit this file so collaborators install the same versions. `vendor/` is generated and ignored by Git. The default host setup/dev shortcuts and their terminal helpers were removed because PHP and Node run in separate containers here.
 
 Artisan is Laravel's command-line tool for tasks such as generating classes and running migrations. It runs inside `app`, using the same PHP runtime as the application.
+
+## Laravel's main directories
+
+| Path | Purpose |
+| --- | --- |
+| `public/index.php` | Public PHP entry point executed by PHP-FPM |
+| `bootstrap/app.php` | Registers routing, middleware, exception handling, and `/up` |
+| `routes/web.php` | Browser routes; `/` currently renders the welcome view |
+| `app/` | Application classes, including models and later Livewire components |
+| `config/` | Settings resolved from `.env` and documented defaults |
+| `resources/` | Blade templates and frontend source |
+| `database/migrations/` | Versioned database schema changes |
+| `storage/` | Runtime files, compiled Blade views, and local application storage |
+| `bootstrap/cache/` | Generated package discovery and configuration caches |
+| `tests/` | Automated application checks |
+
+Nginx and PHP mount the project at the same `/var/www/html` path. Nginx passes `/var/www/html/public/index.php` to PHP-FPM; that exact path must exist in the PHP container too. PHP-FPM speaks FastCGI, so a browser connects to Nginx rather than directly to port 9000.
 
 ## Configuration and secrets
 
 Laravel's `.env` supplies environment-specific values. `.env.example` documents required settings with safe placeholders. Compose can also use an environment file to substitute values into its configuration; that substitution does not automatically inject every value into a container.
 
-Here Compose maps `DB_*` settings to PostgreSQL's `POSTGRES_*` variables. Laravel will read the bind-mounted `.env` itself. The doubled `$$` in the database health check leaves variable expansion to the container shell instead of Compose.
+Here Compose maps `DB_*` settings to PostgreSQL's `POSTGRES_*` variables. Laravel reads the bind-mounted `.env` itself. The doubled `$$` in the database health check leaves variable expansion to the container shell instead of Compose.
 
 `APP_KEY` protects Laravel's encrypted values and must remain stable in production. Generate a development key during setup; provision the production key once and preserve it across deployments.
+
+Our example uses `SESSION_SECURE_COOKIE=false` for local HTTP. Production HTTPS must use secure cookies. Mail is sent to logs during development, and queued work runs synchronously; neither needs another container at this stage.
 
 Laravel's configuration cache captures resolved settings. Prepare it with the actual runtime environment, not build-time secrets. Read environment values through configuration files rather than calling `env()` throughout application code.
 
@@ -78,11 +107,23 @@ Each task belongs to a user. Queries must restrict results to that user, and pol
 
 Tests use a separate PostgreSQL database because test helpers can erase tables. Demo seeds are for local development, not production deployment.
 
+The scaffold tests currently use array-backed sessions/cache and do not query PostgreSQL. Their configuration already points database access at the reserved `todo_test` account/database, which will be provisioned in Phase 5 before database tests are added.
+
+## Database sessions, cache, and migrations
+
+HTTP is stateless. Laravel uses a session cookie to associate requests with a row in `sessions`; the browser does not receive the entire session record. Database storage lets those sessions survive PHP container recreation while the database volume remains intact.
+
+`CACHE_STORE=database` stores cached values in `cache` and lock records in `cache_locks`. This keeps the initial stack small. The scaffold's migrations already create these tables, so no extra session/cache migration is needed. Cache values remain disposable even though the underlying volume persists.
+
+Laravel records completed migrations in `migrations`. `migrate` applies new ones; `migrate:fresh` drops tables and is unsuitable for preserving existing data. The standard jobs tables also exist, but the synchronous queue setting means we do not run a worker.
+
+Container recreation replaces processes and container filesystems. PostgreSQL data survives in its named volume, while source and `.env` remain in the host bind mount. Restarting therefore does not require regenerating the key or reinstalling dependencies.
+
 ## Tailwind and frontend builds
 
 Vite serves frontend assets with hot reload during development. Its server must listen on an interface reachable outside its container, while its browser-facing URL must be reachable from the host browser.
 
-The `frontend` Compose profile keeps Node from starting before frontend files exist. We can still run individual Node/npm commands by explicitly targeting that service. Phase 3 will enable its long-running Vite process.
+The `frontend` Compose profile keeps Node optional. Laravel now includes frontend source, but npm dependencies have not been installed. The welcome page includes fallback CSS so it can render immediately. Phase 3 will install and verify the frontend dependencies and enable the long-running Vite process.
 
 Production uses compiled, versioned assets, so there is no running Vite or Node service. Tailwind is integrated through Vite; see the [official installation guide](https://tailwindcss.com/docs/installation/using-vite).
 
@@ -115,4 +156,4 @@ Rolling back an image does not roll back database changes. Favor schema changes 
 | Changed environment value has no effect | Container environment and cached Laravel configuration |
 | Data disappeared | Compose project/volume selection and whether volumes were deleted |
 
-Start with `docker compose ps` and `docker compose logs --tail=100 app db web`. Check Nginx configuration with `docker compose exec web nginx -t`. `/healthz` checks only Nginx; end-to-end Laravel readiness is added when the application exists.
+Start with `docker compose ps` and `docker compose logs --tail=100 app db web`. Check Nginx configuration with `docker compose exec web nginx -t`. `/healthz` checks Nginx; `/up` checks Laravel boot through PHP-FPM, but does not check database connectivity. A missing session-table error on `/` usually means the initial migrations have not run.
