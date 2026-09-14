@@ -2,7 +2,7 @@
 
 A learning project: manually assemble a Laravel, Livewire, Tailwind, and PostgreSQL todo app, then deploy it using Docker on self-managed infrastructure.
 
-**Current state:** Phase 5 is complete. Task persistence, validation, ownership, completion, filtering, and pagination are implemented and tested. The home page is still the temporary counter; task screens arrive in Phase 6.
+**Current state:** Phase 6 is complete. The authenticated home page supports creating, editing, completing/reopening, and deleting your tasks, with filters and pagination.
 
 ## Project documents
 
@@ -62,7 +62,7 @@ docker compose ps
 curl --fail http://localhost:8080/up
 ```
 
-Open [http://localhost:8080](http://localhost:8080) to log in. Create a local account at `/register`, then try the Livewire counter. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
+Open [http://localhost:8080](http://localhost:8080) to log in. Create a local account at `/register`, then add your first task. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
 
 Generate the application key only when setting up a new `.env` with an empty `APP_KEY`. Keep an existing key when updating or restarting the app. Migrations create the `users`, `sessions`, `cache`, and other standard Laravel tables; rerunning `migrate` applies only pending migrations.
 
@@ -115,7 +115,7 @@ docker compose up -d node
 docker compose logs --tail=30 node
 ```
 
-Keep the browser on [http://localhost:8080](http://localhost:8080). Vite serves assets on port 5173; it does not serve the Laravel page. CSS changes update in place; Blade changes trigger a page refresh. The counter resets on a full refresh and is not stored in PostgreSQL.
+Keep the browser on [http://localhost:8080](http://localhost:8080). Vite serves assets on port 5173; it does not serve the Laravel page. CSS changes update in place; Blade changes trigger a page refresh. Saved tasks persist in PostgreSQL across refreshes; unsaved form input does not.
 
 To use compiled assets with Node stopped:
 
@@ -132,8 +132,8 @@ Reload the browser afterward. A normal stop removes `public/hot`. If Vite was ki
 
 Livewire was installed explicitly with `docker compose exec app composer require 'livewire/livewire:^4.0'`. Future clones install it from `composer.lock`.
 
-- `app/Livewire/Counter.php`: PHP state, increment/reset actions, and layout selection.
-- `resources/views/livewire/counter.blade.php`: interactive component markup.
+- `app/Livewire/TaskList.php`: task form state, actions, filters, pagination, and layout selection (replaces the Phase 3 counter).
+- `resources/views/livewire/task-list.blade.php`: interactive component markup.
 - `resources/views/layouts/app.blade.php`: shared page layout and explicit Vite/Livewire asset directives.
 - `resources/css/app.css` and `vite.config.js`: Tailwind source discovery and Docker hot reload settings.
 
@@ -141,7 +141,7 @@ We use system fonts and Livewire's bundled Alpine.js. No separate Alpine install
 
 ## Accounts and registration
 
-- `/login` and `/register` are guest-only pages. Successful authentication redirects to `/`, currently the counter.
+- `/login` and `/register` are guest-only pages. Successful authentication redirects to `/`, your task list.
 - Email addresses are trimmed and lowercased. New passwords require at least 12 characters and at most 72 bytes, matching bcrypt's input limit.
 - Five failed login attempts for the same email/IP block further attempts for 60 seconds. A successful login clears that counter. Separate IP limits allow 30 login submissions and 10 registration submissions per minute.
 - The header logout button submits a CSRF-protected POST. Login rotates the session; logout invalidates it and regenerates the CSRF token.
@@ -154,7 +154,7 @@ AUTH_REGISTRATION_ENABLED=false
 
 Then run `docker compose exec app php artisan config:clear` in development. Both GET and POST `/register` return 404, and the signup link disappears. The configuration defaults to disabled when the variable is absent. In production, rebuild the configuration cache after changing this setting. Password recovery and email verification remain outside the first-release scope.
 
-`TaskService` queries through the authenticated user’s `tasks()` relationship and checks `TaskPolicy` for reads and mutations. Other users’ task IDs return not found. The UI will call this service in Phase 6.
+`TaskService` queries through the authenticated user’s `tasks()` relationship and checks `TaskPolicy` for reads and mutations. Other users’ task IDs return not found. The Livewire interface calls this service for every task query and mutation.
 
 ## Task persistence and demo data
 
@@ -174,7 +174,7 @@ Optional local demo data:
 docker compose exec app php artisan db:seed --class=DemoSeeder
 ```
 
-This creates `demo@example.test` with password `local-demo-password` and four tasks, one completed. It runs only with `APP_ENV=local`. If that email already exists, nothing changes. The default `db:seed` creates no accounts or tasks. Demo seeding was tested in isolation and has not been run on your development database. Task records will be visible in the app when Phase 6 adds the interface.
+This creates `demo@example.test` with password `local-demo-password` and four tasks, one completed. It runs only with `APP_ENV=local`. If that email already exists, nothing changes. The default `db:seed` creates no accounts or tasks. Demo seeding was tested in isolation and has not been run on your development database. Log in with that account to view its tasks.
 
 ## Current checks
 
@@ -228,3 +228,11 @@ Phase 3 verified Livewire 4.4.4, Tailwind 4.3.3, and Vite 8.3.0: four tests (10 
 Phase 4: 19 tests / 178 assertions pass. HTTP smoke checks verified CSRF rejection, registration/login, logout, and rejection of a stale Livewire action after logout. The synthetic smoke account was removed.
 
 Phase 5: 43 tests / 252 assertions and Pint pass. PostgreSQL checks cover foreign keys, cascade deletion, title/notes limits, ownership isolation, lifecycle operations, filtering, pagination, and local-only demo seeding. The additive development migration was applied successfully.
+
+## Phase 6 interface
+
+Use the form to add a title and optional notes. Edit loads a task into the same form; Cancel editing discards unsaved changes. Complete/Reopen changes its status. Delete opens an inline confirmation; Keep task cancels it.
+
+All, Active, and Completed show only your tasks, newest first, 20 per page. Changing filters resets the page. Deleting or completing the last matching task on a page moves to the last available page. Adding a task switches to All on page 1 so the new task is visible. Filters and unsaved edits reset on refresh; saved changes persist.
+
+Phase 6 verification: 48 tests / 299 assertions, Pint, and the frontend build pass. Browser checks cover task creation, editing, persistence after reload, status changes, filters, and deletion at desktop and mobile sizes.

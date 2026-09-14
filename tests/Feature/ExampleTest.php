@@ -2,19 +2,22 @@
 
 namespace Tests\Feature;
 
-use App\Livewire\Counter;
+use App\Livewire\TaskList;
 use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
 class ExampleTest extends TestCase
 {
+    use RefreshDatabase;
+
     /**
      * A basic test example.
      */
     public function test_the_application_returns_a_successful_response(): void
     {
-        $response = $this->actingAs(User::factory()->make())->withoutVite()->get('/');
+        $response = $this->actingAs(User::factory()->create())->withoutVite()->get('/');
 
-        $response->assertStatus(200)->assertSeeLivewire(Counter::class);
+        $response->assertStatus(200)->assertSeeLivewire(TaskList::class);
     }
 }

@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phases 1–5 complete and verified. Next: Phase 6, the todo interface. Phases 6–9 have not started.
+Status: Phases 1–6 complete and verified. Next: Phase 7, quality and reproducibility. Phases 7–9 have not started.
 
 ## Purpose
 
@@ -138,9 +138,9 @@ Phase 5 implementation: `TaskService` is ready for Livewire integration. It deri
 
 ### Phase 6 — Todo interface
 
-- [ ] Implement Livewire create, edit, complete/reopen, delete, filtering, and pagination.
-- [ ] Add responsive layout, action feedback, empty states, confirmation, and accessibility details.
-- [ ] Add Livewire tests for behaviors and unauthorized direct action calls.
+- [x] Implement Livewire create, edit, complete/reopen, delete, filtering, and pagination.
+- [x] Add responsive layout, action feedback, empty states, confirmation, and accessibility details.
+- [x] Add Livewire tests for behaviors and unauthorized direct action calls.
 
 Acceptance: all product requirements work in a browser at mobile and desktop sizes; refresh preserves changes; validation and boundary pagination cases work; component tests pass.
 
@@ -208,9 +208,10 @@ Compose files must have clearly documented invocation rules so development setti
 | 3 | Complete (2026-09-13) | Livewire 4.4.4, Tailwind 4.3.3, Vite 8.3.0; 4 tests / 10 assertions and Pint passed; npm ci/build passed; browser increment/reset worked; CSS hot replacement preserved state and Blade changes auto-refreshed; compiled styling/actions worked with Node stopped and no hot file |
 | 4 | Complete (2026-09-13) | 19 tests / 178 assertions; registration validation and toggle; login/password hashing; session and CSRF rotation; lockout expiry/reset and IP throttles; owner-only policy; HTTP CSRF and stale Livewire rejection after logout; forms inspected and frontend build passed |
 | 5 | Complete (2026-09-14) | 43 tests / 252 assertions; PostgreSQL task migration and constraints; owner-scoped service/policies; validation boundaries; completion/reopening/deletion; filtering/pagination; factories and guarded demo seeding; Pint passed; development migration applied and rerun idempotently |
-| 6–9 | Not started | Task UI, CI, production images, and deployment remain pending |
+| 6 | Complete (2026-09-14) | Livewire task UI; 48 tests / 299 assertions; ownership and pagination boundary tests; Pint and Vite build passed; desktop/mobile browser lifecycle and reload persistence checked |
+| 7–9 | Not started | CI, production images, and deployment remain pending |
 
-Phase 5 leaves `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves a temporary, nonpersistent counter after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
+Phase 6 leaves `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves the persistent task interface after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
 
 ## Official references
 

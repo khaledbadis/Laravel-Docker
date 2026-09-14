@@ -76,7 +76,7 @@ Artisan is Laravel's command-line tool for tasks such as generating classes and 
 | --- | --- |
 | `public/index.php` | Public PHP entry point executed by PHP-FPM |
 | `bootstrap/app.php` | Registers routing, middleware, exception handling, and `/up` |
-| `routes/web.php` | Browser routes; `/` currently renders the Livewire counter |
+| `routes/web.php` | Browser routes; `/` renders the authenticated Livewire task list |
 | `app/` | Application classes, including models and later Livewire components |
 | `config/` | Settings resolved from `.env` and documented defaults |
 | `resources/` | Blade templates and frontend source |
@@ -129,9 +129,9 @@ Production uses compiled, versioned assets, so there is no running Vite or Node 
 
 ## Livewire components and the shared layout
 
-`Counter.php` is a full-page component: its public property holds the count, its methods handle actions, and `render()` selects the Blade view. The `Layout` attribute wraps that view in `layouts/app.blade.php`. `wire:click` calls PHP through a Livewire request; the returned HTML updates the component without a full page reload.
+`TaskList.php` is a full-page component: public properties hold form state, its methods handle actions, and `render()` selects the Blade view. The `Layout` attribute wraps that view in `layouts/app.blade.php`. `wire:click` calls PHP through a Livewire request; the returned HTML updates the component without a full page reload.
 
-`wire:loading.attr="disabled"` prevents another click while a request is in flight. The count is `Locked`, so browser requests cannot assign an arbitrary value directly; server actions can still change it. This is a demo of component state, not task persistence or user authorization. The count resets on refresh.
+`wire:loading.attr="disabled"` disables buttons while a request is in flight. Form state is temporary; the service saves task records in PostgreSQL so they survive a refresh.
 
 The layout includes `@vite`, `@livewireStyles`, and `@livewireScripts` explicitly so their roles are visible. Livewire supplies Alpine.js already; importing another Alpine instance can cause conflicts. No Livewire configuration file is needed for these conventions. See [Livewire installation](https://livewire.laravel.com/docs/4.x/installation).
 
@@ -143,7 +143,7 @@ The Node service runs Vite directly with an init process, allowing stop signals 
 
 Vite binds `0.0.0.0:5173` inside Docker, while browsers use the hostname in `APP_URL` and port in `VITE_PORT`. The WebSocket uses that same published port. These are different addresses for different sides of the container boundary.
 
-Tailwind's Vite plugin generates CSS from class names in our Blade, JavaScript, Livewire PHP, and Laravel pagination sources. Write complete class names so they can be detected. `@theme` sets the font stack; system fonts avoid an external font service. CSS hot updates preserve the counter state; Blade auto-refresh reloads the page and resets it.
+Tailwind's Vite plugin generates CSS from class names in our Blade, JavaScript, Livewire PHP, and Laravel pagination sources. Write complete class names so they can be detected. `@theme` sets the font stack; system fonts avoid an external font service. CSS hot updates preserve component state; Blade auto-refresh reloads the page. Saved tasks remain in PostgreSQL.
 
 The tests exercise PHP/Livewire behavior without Vite. Browser checks separately verify scripts, styling, hot reload, and compiled assets; PHP tests alone cannot prove those work.
 
@@ -171,7 +171,7 @@ Validation gives users useful field errors. PostgreSQL constraints also reject i
 
 Factories generate test records and can create completed tasks with `Task::factory()->completed()`. `DemoSeeder` is an explicit local-only convenience; it skips an existing demo email instead of overwriting data. The default seeder is empty so routine setup cannot accidentally create a known account.
 
-The persistence tests reload records from PostgreSQL to verify saves, test cross-user IDs, and attempt invalid SQL inserts to exercise constraints. Timestamp comparisons use whole seconds, matching Eloquent's default stored precision. The task UI and pagination-reset behavior belong to Phase 6.
+The persistence tests reload records from PostgreSQL to verify saves, test cross-user IDs, and attempt invalid SQL inserts to exercise constraints. Timestamp comparisons use whole seconds, matching Eloquent's default stored precision. Livewire tests also cover the UI actions and pagination boundaries.
 
 ## Permissions and logs
 
@@ -203,3 +203,13 @@ Rolling back an image does not roll back database changes. Favor schema changes 
 | Data disappeared | Compose project/volume selection and whether volumes were deleted |
 
 Start with `docker compose ps` and `docker compose logs --tail=100 app db web`. Check Nginx configuration with `docker compose exec web nginx -t`. `/healthz` checks Nginx; `/up` checks Laravel boot through PHP-FPM, but does not check database connectivity. A missing session-table error on `/` usually means the initial migrations have not run.
+
+## How the task interface works
+
+`TaskList` holds temporary form fields and the selected filter. `wire:model` sends inputs with the next action; `wire:submit` calls `save` without a full page reload. The component delegates validation, persistence, and authorization to `TaskService`, then Livewire updates the Blade markup. Blade escapes task text before rendering it.
+
+`#[Locked]` prevents clients from replacing selected edit/delete IDs or the filter directly. It does not replace authorization: every action still loads a task through the authenticated owner. Editing and deleting recheck ownership when saving or confirming. Delete confirmation is a UI safeguard, not an authorization boundary.
+
+`WithPagination` keeps the page in the URL. Filters reset it to page 1; rendering clamps an out-of-range page after a task disappears. Each row has a stable `wire:key` based on its task ID so Livewire tracks the correct row during updates.
+
+The form displays server validation next to labeled inputs. Status messages use a polite live region, filters expose their pressed state, and action buttons disable while requests run. Editing focuses the title; deletion confirmation initially focuses Keep task. Tailwind switches the form/list columns to a vertical layout on smaller screens.

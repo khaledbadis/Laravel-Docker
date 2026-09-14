@@ -2,7 +2,7 @@
 
 use App\Http\Controllers\AuthController;
 use App\Http\Middleware\EnsureRegistrationEnabled;
-use App\Livewire\Counter;
+use App\Livewire\TaskList;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
@@ -15,6 +15,6 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware('auth')->group(function () {
-    Route::get('/', Counter::class)->name('home');
+    Route::get('/', TaskList::class)->name('home');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });
