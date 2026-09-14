@@ -1,6 +1,6 @@
 # Laravel and Docker: project guide
 
-This guide explains the project design. Docker, Laravel, Livewire, and Tailwind are integrated; deployment is an upcoming phase. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+This guide explains the project design. Docker, Laravel, Livewire, Tailwind, and authentication are integrated; task persistence and deployment are upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## What each tool does
 
@@ -107,7 +107,7 @@ Each task belongs to a user. Queries must restrict results to that user, and pol
 
 Tests use a separate PostgreSQL database because test helpers can erase tables. Demo seeds are for local development, not production deployment.
 
-The scaffold tests currently use array-backed sessions/cache and do not query PostgreSQL. Their configuration already points database access at the reserved `todo_test` account/database, which will be provisioned in Phase 5 before database tests are added.
+Authentication tests use the separate `db_test` PostgreSQL container. It has different credentials and disposable memory-backed storage. `phpunit.xml` forces this connection, and `Tests/TestCase.php` checks it before database setup. `RefreshDatabase` migrates the test schema and isolates records between tests. Test sessions/cache use arrays; an additional HTTP smoke check covered real cookies, CSRF, and database sessions.
 
 ## Database sessions, cache, and migrations
 
@@ -146,6 +146,20 @@ Vite binds `0.0.0.0:5173` inside Docker, while browsers use the hostname in `APP
 Tailwind's Vite plugin generates CSS from class names in our Blade, JavaScript, Livewire PHP, and Laravel pagination sources. Write complete class names so they can be detected. `@theme` sets the font stack; system fonts avoid an external font service. CSS hot updates preserve the counter state; Blade auto-refresh reloads the page and resets it.
 
 The tests exercise PHP/Livewire behavior without Vite. Browser checks separately verify scripts, styling, hot reload, and compiled assets; PHP tests alone cannot prove those work.
+
+## Authentication and ownership
+
+`AuthController` handles standard form submissions. Form requests validate input and normalize email addresses; the User model's `hashed` cast hashes new passwords. Laravel's session guard checks credentials with `Auth::attempt` and remembers the authenticated user in the session. We use these Laravel services directly, without a starter kit or custom password hashing.
+
+`guest` middleware keeps signed-in users out of login/signup pages. `auth` middleware protects the home route. Livewire re-applies that route's persistent authentication middleware during subsequent updates, including requests sent after logout.
+
+Each form includes `@csrf`. Login and registration regenerate the session ID to prevent session fixation. Logout calls `Auth::logout`, invalidates session data, and generates a fresh CSRF token. Password fields are never restored from flashed input. See [Laravel authentication](https://laravel.com/docs/13.x/authentication).
+
+Login failures use a cache-backed limiter keyed by normalized email and IP. A second limiter caps total submissions from an IP, including attempts that change email addresses. Registration has its own IP limit. The database cache shares these counters across PHP requests.
+
+The registration middleware reads `config('auth.registration_enabled')` for each request. Turning the setting off blocks both displaying and submitting the form; it does not disable existing accounts. Runtime code reads configuration rather than calling `env()` directly, so it remains compatible with configuration caching.
+
+Authentication answers who is signed in; a policy decides whether that user can access a particular record. Laravel discovers `TaskPolicy` by convention. Its view/update/delete rules compare the owner ID. Phase 5 will query through `$request->user()->tasks()` (or the equivalent authenticated relationship in Livewire) and authorize mutations. The Task model and relationships are only the ownership foundation until its migration is added.
 
 ## Permissions and logs
 

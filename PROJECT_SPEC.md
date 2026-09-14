@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phases 1–3 complete and verified. Next: Phase 4, accounts and authorization. Phases 4–9 have not started.
+Status: Phases 1–4 complete and verified. Next: Phase 5, task persistence and rules. Phases 5–9 have not started.
 
 ## Purpose
 
@@ -105,7 +105,7 @@ Acceptance: Compose configuration validates; images build; PostgreSQL becomes he
 
 Acceptance: Laravel responds through Nginx; database migrations work; private files such as `.env` are inaccessible over HTTP; data survives container recreation; no host PHP, Composer, or Node installation is required.
 
-Implementation notes: the original Phase 1 Nginx mapping required no changes. Standard Laravel migrations supply session/cache tables. Host-oriented setup/dev scripts and Pail/Pao helpers were omitted. The scaffold includes frontend source, but npm and Livewire installation remain Phase 3 work. Initial smoke tests do not query a database; their forced PostgreSQL configuration reserves an unprovisioned `todo_test` database/account until Phase 5, avoiding the development database.
+Implementation notes: the original Phase 1 Nginx mapping required no changes. Standard Laravel migrations supply session/cache tables. Host-oriented setup/dev scripts and Pail/Pao helpers were omitted. The scaffold includes frontend source, but npm and Livewire installation remain Phase 3 work. Initial smoke tests did not query a database; the reserved testing connection was provisioned as the isolated `db_test` service in Phase 4.
 
 ### Phase 3 — Integrate Livewire and Tailwind
 
@@ -118,11 +118,13 @@ Acceptance: a Livewire action updates the page; Tailwind styles render; hot relo
 
 ### Phase 4 — Accounts and authorization foundation
 
-- [ ] Build registration, login, logout, guest/auth routing, and the production registration setting manually.
-- [ ] Add validation, throttling, session handling, and authentication tests.
-- [ ] Establish the task ownership policy and authenticated query conventions for Phase 5.
+- [x] Build registration, login, logout, guest/auth routing, and the production registration setting manually.
+- [x] Add validation, throttling, session handling, and authentication tests.
+- [x] Establish the task ownership policy and authenticated query conventions for Phase 5.
 
 Acceptance: valid accounts can sign in/out; invalid inputs fail clearly; protected routes reject guests; registration can be disabled; session behavior and throttling have passing tests.
+
+Phase 4 notes: isolated PostgreSQL testing was brought forward because authentication needs database records. The optional `db_test` service has separate credentials and disposable storage; the test bootstrap guards its connection. Ownership model scaffolding and `TaskPolicy` exist, but task schema, fields, and queries remain Phase 5 work.
 
 ### Phase 5 — Task persistence and rules
 
@@ -202,9 +204,10 @@ Compose files must have clearly documented invocation rules so development setti
 | 1 | Complete (2026-09-13) | Docker 29.7.2 / Compose 5.5.0 on x86_64; configuration valid; PHP image built; PostgreSQL healthy; required extensions loaded; authenticated PDO query through `db` succeeded; PHP and Node files owned by host UID/GID 1000; Nginx config valid; `/healthz` 200, `/` 404 pending Laravel, `/.env` 403 |
 | 2 | Complete (2026-09-13) | Laravel 13.31.0; 3 PostgreSQL migrations applied and rerun idempotently; `/` and `/up` returned 200; private files returned 403/404; cache value, session record, and migration history survived full container recreation; Composer validation/platform checks, 2 scaffold tests, and Pint passed |
 | 3 | Complete (2026-09-13) | Livewire 4.4.4, Tailwind 4.3.3, Vite 8.3.0; 4 tests / 10 assertions and Pint passed; npm ci/build passed; browser increment/reset worked; CSS hot replacement preserved state and Blade changes auto-refreshed; compiled styling/actions worked with Node stopped and no hot file |
-| 4–9 | Not started | Accounts, task features, CI, production images, and deployment remain pending |
+| 4 | Complete (2026-09-13) | 19 tests / 178 assertions; registration validation and toggle; login/password hashing; session and CSRF rotation; lockout expiry/reset and IP throttles; owner-only policy; HTTP CSRF and stale Livewire rejection after logout; forms inspected and frontend build passed |
+| 5–9 | Not started | Task persistence/features, CI, production images, and deployment remain pending |
 
-Phase 3 leaves `app`, `db`, and `web` running with compiled assets and Node stopped. The home page serves a temporary, nonpersistent counter using a shared Blade layout. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
+Phase 4 leaves `app`, `db`, and `web` running with compiled assets. Node and the disposable test database are stopped. Guests see login; the home page serves a temporary, nonpersistent counter after authentication. Local signup is enabled, and no seeded account is left behind. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
 
 ## Official references
 

@@ -2,7 +2,7 @@
 
 A learning project: manually assemble a Laravel, Livewire, Tailwind, and PostgreSQL todo app, then deploy it using Docker on self-managed infrastructure.
 
-**Current state:** Phase 3 is complete. Laravel, Livewire, Tailwind, and Vite are integrated. The home page contains a temporary interactive counter; authentication and todo features follow in later phases.
+**Current state:** Phase 4 is complete. Registration, login, logout, throttling, and protected routing work. The home page is a temporary counter behind login; task persistence and screens follow in Phases 5–6.
 
 ## Project documents
 
@@ -17,6 +17,7 @@ A learning project: manually assemble a Laravel, Livewire, Tailwind, and Postgre
 | `db` | PostgreSQL with persistent storage |
 | `web` | Nginx public entry point |
 | `node` | Development Vite server; assets are compiled during production builds |
+| `db_test` | Disposable PostgreSQL instance, started only for tests |
 
 The host will need Git, Docker Engine, and the Docker Compose plugin. PHP, Composer, and Node will run in containers.
 
@@ -61,7 +62,7 @@ docker compose ps
 curl --fail http://localhost:8080/up
 ```
 
-Open [http://localhost:8080](http://localhost:8080) to try the Livewire counter. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
+Open [http://localhost:8080](http://localhost:8080) to log in. Create a local account at `/register`, then try the Livewire counter. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
 
 Generate the application key only when setting up a new `.env` with an empty `APP_KEY`. Keep an existing key when updating or restarting the app. Migrations create the `users`, `sessions`, `cache`, and other standard Laravel tables; rerunning `migrate` applies only pending migrations.
 
@@ -138,16 +139,44 @@ Livewire was installed explicitly with `docker compose exec app composer require
 
 We use system fonts and Livewire's bundled Alpine.js. No separate Alpine installation, external font download, or host process runner is needed.
 
+## Accounts and registration
+
+- `/login` and `/register` are guest-only pages. Successful authentication redirects to `/`, currently the counter.
+- Email addresses are trimmed and lowercased. New passwords require at least 12 characters and at most 72 bytes, matching bcrypt's input limit.
+- Five failed login attempts for the same email/IP block further attempts for 60 seconds. A successful login clears that counter. Separate IP limits allow 30 login submissions and 10 registration submissions per minute.
+- The header logout button submits a CSRF-protected POST. Login rotates the session; logout invalidates it and regenerates the CSRF token.
+
+Local `.env` enables registration. To close signup while preserving login for existing users, set:
+
+```dotenv
+AUTH_REGISTRATION_ENABLED=false
+```
+
+Then run `docker compose exec app php artisan config:clear` in development. Both GET and POST `/register` return 404, and the signup link disappears. The configuration defaults to disabled when the variable is absent. In production, rebuild the configuration cache after changing this setting. Password recovery and email verification remain outside the first-release scope.
+
+`TaskPolicy`, `User::tasks()`, and `Task::user()` establish ownership conventions for Phase 5. There is no tasks table yet. Future queries must start from the authenticated user's relationship and authorize each record mutation; policy discovery alone does not filter queries.
+
 ## Current checks
 
 ```bash
 docker compose exec app composer validate --strict
 docker compose exec app composer check-platform-reqs
+docker compose up -d --wait db_test
 docker compose exec app composer test
 docker compose exec app vendor/bin/pint --test
 ```
 
-The four tests check the scaffold, the home page Livewire component, counter actions, and rejection of direct changes to its locked property. The home test disables Vite integration, so the test suite does not require a running asset server. They use in-memory session/cache stores and do not access a database. `phpunit.xml` reserves a separate PostgreSQL database/account named `todo_test`; it is not provisioned yet, so database-dependent tests will fail until Phase 5 sets it up. It never defaults to the development database. PostgreSQL integration and persistence are checked separately during Phase 2.
+The suite uses the isolated `db_test` PostgreSQL server, with array-backed sessions/cache and Vite disabled. Authentication tests apply migrations with `RefreshDatabase`; they do not touch the development database. Forced test settings and a bootstrap guard reject another database host, account, database name, or a database URL override.
+
+The test database uses memory-backed storage and is disposable. Start it before running the suite; stopping it discards its data:
+
+```bash
+docker compose up -d --wait db_test
+docker compose exec app composer test
+docker compose stop db_test
+```
+
+Do not run `migrate:fresh` against the regular `db` service. CI automation is added in Phase 7.
 
 ## How Laravel was installed
 
@@ -161,7 +190,7 @@ The skeleton files were copied into the repository while preserving the existing
 
 ## Remaining operating instructions
 
-- **Phases 5–7:** isolated PostgreSQL tests and CI.
+- **Phases 5–7:** task persistence, task screens, and CI.
 - **Phases 8–9:** production Compose, releases, HTTPS, backups, restore, and rollback.
 
 `compose.yaml` and the current PHP image are development-only. Production will use a separate Compose file and image targets.
@@ -175,3 +204,5 @@ Checks passed: image build, Compose startup, PostgreSQL health and authenticated
 Laravel skeleton v13.10.1 resolved Laravel Framework v13.31.0; PHP dependencies are pinned in `composer.lock`. Phase 2 validation results are recorded in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 Phase 3 verified Livewire 4.4.4, Tailwind 4.3.3, and Vite 8.3.0: four tests (10 assertions), Pint, npm clean install/build, browser Livewire actions, CSS hot replacement, Blade auto-refresh, and compiled assets with Node stopped.
+
+Phase 4: 19 tests / 178 assertions pass. HTTP smoke checks verified CSRF rejection, registration/login, logout, and rejection of a stale Livewire action after logout. The synthetic smoke account was removed.
