@@ -2,7 +2,7 @@
 
 A learning project: manually assemble a Laravel, Livewire, Tailwind, and PostgreSQL todo app, then deploy it using Docker on self-managed infrastructure.
 
-**Current state:** Phase 4 is complete. Registration, login, logout, throttling, and protected routing work. The home page is a temporary counter behind login; task persistence and screens follow in Phases 5–6.
+**Current state:** Phase 5 is complete. Task persistence, validation, ownership, completion, filtering, and pagination are implemented and tested. The home page is still the temporary counter; task screens arrive in Phase 6.
 
 ## Project documents
 
@@ -154,7 +154,27 @@ AUTH_REGISTRATION_ENABLED=false
 
 Then run `docker compose exec app php artisan config:clear` in development. Both GET and POST `/register` return 404, and the signup link disappears. The configuration defaults to disabled when the variable is absent. In production, rebuild the configuration cache after changing this setting. Password recovery and email verification remain outside the first-release scope.
 
-`TaskPolicy`, `User::tasks()`, and `Task::user()` establish ownership conventions for Phase 5. There is no tasks table yet. Future queries must start from the authenticated user's relationship and authorize each record mutation; policy discovery alone does not filter queries.
+`TaskService` queries through the authenticated user’s `tasks()` relationship and checks `TaskPolicy` for reads and mutations. Other users’ task IDs return not found. The UI will call this service in Phase 6.
+
+## Task persistence and demo data
+
+After pulling Phase 5, apply the new table:
+
+```bash
+docker compose exec app php artisan migrate --no-interaction
+```
+
+`TaskService` provides create, find, update, complete/reopen, delete, and paginated listing operations for the signed-in user. Titles are trimmed and limited to 255 characters; optional notes are trimmed and limited to 5,000 characters. Blank notes become `null`. Only title and notes are accepted from submitted data; the service assigns ownership and completion status itself.
+
+Lists accept `all`, `active`, or `completed`, return 20 records per page, and sort newest first with ID as the tie-breaker. Completing an already-completed task preserves its timestamp. Reopening clears it.
+
+Optional local demo data:
+
+```bash
+docker compose exec app php artisan db:seed --class=DemoSeeder
+```
+
+This creates `demo@example.test` with password `local-demo-password` and four tasks, one completed. It runs only with `APP_ENV=local`. If that email already exists, nothing changes. The default `db:seed` creates no accounts or tasks. Demo seeding was tested in isolation and has not been run on your development database. Task records will be visible in the app when Phase 6 adds the interface.
 
 ## Current checks
 
@@ -190,7 +210,7 @@ The skeleton files were copied into the repository while preserving the existing
 
 ## Remaining operating instructions
 
-- **Phases 5–7:** task persistence, task screens, and CI.
+- **Phases 6–7:** task screens and CI.
 - **Phases 8–9:** production Compose, releases, HTTPS, backups, restore, and rollback.
 
 `compose.yaml` and the current PHP image are development-only. Production will use a separate Compose file and image targets.
@@ -206,3 +226,5 @@ Laravel skeleton v13.10.1 resolved Laravel Framework v13.31.0; PHP dependencies 
 Phase 3 verified Livewire 4.4.4, Tailwind 4.3.3, and Vite 8.3.0: four tests (10 assertions), Pint, npm clean install/build, browser Livewire actions, CSS hot replacement, Blade auto-refresh, and compiled assets with Node stopped.
 
 Phase 4: 19 tests / 178 assertions pass. HTTP smoke checks verified CSRF rejection, registration/login, logout, and rejection of a stale Livewire action after logout. The synthetic smoke account was removed.
+
+Phase 5: 43 tests / 252 assertions and Pint pass. PostgreSQL checks cover foreign keys, cascade deletion, title/notes limits, ownership isolation, lifecycle operations, filtering, pagination, and local-only demo seeding. The additive development migration was applied successfully.

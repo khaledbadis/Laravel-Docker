@@ -1,6 +1,6 @@
 # Laravel and Docker: project guide
 
-This guide explains the project design. Docker, Laravel, Livewire, Tailwind, and authentication are integrated; task persistence and deployment are upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+This guide explains the project design. Docker, Laravel, Livewire, Tailwind, and authentication are integrated; task screens and deployment are upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## What each tool does
 
@@ -159,7 +159,19 @@ Login failures use a cache-backed limiter keyed by normalized email and IP. A se
 
 The registration middleware reads `config('auth.registration_enabled')` for each request. Turning the setting off blocks both displaying and submitting the form; it does not disable existing accounts. Runtime code reads configuration rather than calling `env()` directly, so it remains compatible with configuration caching.
 
-Authentication answers who is signed in; a policy decides whether that user can access a particular record. Laravel discovers `TaskPolicy` by convention. Its view/update/delete rules compare the owner ID. Phase 5 will query through `$request->user()->tasks()` (or the equivalent authenticated relationship in Livewire) and authorize mutations. The Task model and relationships are only the ownership foundation until its migration is added.
+Authentication answers who is signed in; a policy decides whether that user can access a particular record. Laravel discovers `TaskPolicy` by convention. Its view/update/delete rules compare the owner ID. `TaskService` obtains the signed-in user, queries through that user’s `tasks()` relationship, and then authorizes the record. A caller cannot choose a different owner by submitting a `user_id`.
+
+## Task data and rules
+
+`TaskService` is the shared entry point for the next phase's Livewire screens. It validates title/notes, loads records through the authenticated owner, and invokes policies. Keeping these operations together avoids repeating ownership and validation rules in each UI action. It does not accept a caller-supplied user identity.
+
+`Task` allows mass assignment only for title and notes. The relationship assigns `user_id`, and completion is written explicitly by the service. `completed_at = null` means active; a timestamp means completed. A separate status boolean would duplicate that state and could become inconsistent.
+
+Validation gives users useful field errors. PostgreSQL constraints also reject invalid direct inserts: missing owners, blank titles, oversized titles/notes, and nonexistent user references. The foreign key deletes a user's tasks when that user is deleted. Separate indexes support owner/date ordering and owner/completion filtering.
+
+Factories generate test records and can create completed tasks with `Task::factory()->completed()`. `DemoSeeder` is an explicit local-only convenience; it skips an existing demo email instead of overwriting data. The default seeder is empty so routine setup cannot accidentally create a known account.
+
+The persistence tests reload records from PostgreSQL to verify saves, test cross-user IDs, and attempt invalid SQL inserts to exercise constraints. Timestamp comparisons use whole seconds, matching Eloquent's default stored precision. The task UI and pagination-reset behavior belong to Phase 6.
 
 ## Permissions and logs
 

@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phases 1–4 complete and verified. Next: Phase 5, task persistence and rules. Phases 5–9 have not started.
+Status: Phases 1–5 complete and verified. Next: Phase 6, the todo interface. Phases 6–9 have not started.
 
 ## Purpose
 
@@ -128,11 +128,13 @@ Phase 4 notes: isolated PostgreSQL testing was brought forward because authentic
 
 ### Phase 5 — Task persistence and rules
 
-- [ ] Add task migration, model, user relationship, factory, and local-only demo seeding.
-- [ ] Implement validation, owner-scoped queries, policy enforcement, and completion behavior.
-- [ ] Test database constraints, validation boundaries, and cross-user access on a separate PostgreSQL test database.
+- [x] Add task migration, model, user relationship, factory, and local-only demo seeding.
+- [x] Implement validation, owner-scoped queries, policy enforcement, and completion behavior.
+- [x] Test database constraints, validation boundaries, and cross-user access on a separate PostgreSQL test database.
 
 Acceptance: tasks persist, completion can be reversed, and one user cannot read or mutate another user's tasks by changing IDs.
+
+Phase 5 implementation: `TaskService` is ready for Livewire integration. It derives the actor from authentication, scopes every query through that user, authorizes records, and permits only validated title/notes input. Database constraints and owner/order/filter indexes are in place. There are no new task routes or screens yet.
 
 ### Phase 6 — Todo interface
 
@@ -205,9 +207,10 @@ Compose files must have clearly documented invocation rules so development setti
 | 2 | Complete (2026-09-13) | Laravel 13.31.0; 3 PostgreSQL migrations applied and rerun idempotently; `/` and `/up` returned 200; private files returned 403/404; cache value, session record, and migration history survived full container recreation; Composer validation/platform checks, 2 scaffold tests, and Pint passed |
 | 3 | Complete (2026-09-13) | Livewire 4.4.4, Tailwind 4.3.3, Vite 8.3.0; 4 tests / 10 assertions and Pint passed; npm ci/build passed; browser increment/reset worked; CSS hot replacement preserved state and Blade changes auto-refreshed; compiled styling/actions worked with Node stopped and no hot file |
 | 4 | Complete (2026-09-13) | 19 tests / 178 assertions; registration validation and toggle; login/password hashing; session and CSRF rotation; lockout expiry/reset and IP throttles; owner-only policy; HTTP CSRF and stale Livewire rejection after logout; forms inspected and frontend build passed |
-| 5–9 | Not started | Task persistence/features, CI, production images, and deployment remain pending |
+| 5 | Complete (2026-09-14) | 43 tests / 252 assertions; PostgreSQL task migration and constraints; owner-scoped service/policies; validation boundaries; completion/reopening/deletion; filtering/pagination; factories and guarded demo seeding; Pint passed; development migration applied and rerun idempotently |
+| 6–9 | Not started | Task UI, CI, production images, and deployment remain pending |
 
-Phase 4 leaves `app`, `db`, and `web` running with compiled assets. Node and the disposable test database are stopped. Guests see login; the home page serves a temporary, nonpersistent counter after authentication. Local signup is enabled, and no seeded account is left behind. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
+Phase 5 leaves `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves a temporary, nonpersistent counter after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
 
 ## Official references
 

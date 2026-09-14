@@ -2,15 +2,21 @@
 
 namespace App\Models;
 
+use Database\Factories\TaskFactory;
+use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
-// Ownership foundation. Persistence and task fields are implemented in Phase 5.
+#[Fillable(['title', 'notes'])]
 class Task extends Model
 {
+    /** @use HasFactory<TaskFactory> */
+    use HasFactory;
+
     protected function casts(): array
     {
-        return ['user_id' => 'integer'];
+        return ['user_id' => 'integer', 'completed_at' => 'immutable_datetime'];
     }
 
     public function user(): BelongsTo
