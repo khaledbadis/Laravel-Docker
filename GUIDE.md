@@ -1,6 +1,6 @@
 # Laravel and Docker: project guide
 
-This guide explains the project design. Docker, Laravel, Livewire, Tailwind, and authentication are integrated; task screens and deployment are upcoming phases. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+This guide explains the project design. Docker, Laravel, Livewire, Tailwind, authentication, and task screens are integrated; production deployment is the next stage. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## What each tool does
 
@@ -163,7 +163,7 @@ Authentication answers who is signed in; a policy decides whether that user can 
 
 ## Task data and rules
 
-`TaskService` is the shared entry point for the next phase's Livewire screens. It validates title/notes, loads records through the authenticated owner, and invokes policies. Keeping these operations together avoids repeating ownership and validation rules in each UI action. It does not accept a caller-supplied user identity.
+`TaskService` is the shared entry point for the Livewire task screen. It validates title/notes, loads records through the authenticated owner, and invokes policies. Keeping these operations together avoids repeating ownership and validation rules in each UI action. It does not accept a caller-supplied user identity.
 
 `Task` allows mass assignment only for title and notes. The relationship assigns `user_id`, and completion is written explicitly by the service. `completed_at = null` means active; a timestamp means completed. A separate status boolean would duplicate that state and could become inconsistent.
 
@@ -213,3 +213,15 @@ Start with `docker compose ps` and `docker compose logs --tail=100 app db web`. 
 `WithPagination` keeps the page in the URL. Filters reset it to page 1; rendering clamps an out-of-range page after a task disappears. Each row has a stable `wire:key` based on its task ID so Livewire tracks the correct row during updates.
 
 The form displays server validation next to labeled inputs. Status messages use a polite live region, filters expose their pressed state, and action buttons disable while requests run. Editing focuses the title; deletion confirmation initially focuses Keep task. Tailwind switches the form/list columns to a vertical layout on smaller screens.
+
+## Continuous integration and repeatable setup
+
+CI runs checks automatically on a fresh machine when code is pushed or a pull request changes. Our workflow calls `scripts/verify.sh`, so the same commands can run locally in a disposable checkout. GitHub supplies Git and Docker; PHP, Composer, Node, and PostgreSQL still run inside containers. The workflow uses a pinned checkout action and read-only permissions. See [GitHub workflow syntax](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax).
+
+Lockfiles fix application dependency versions, while image digests fix base images. Installing from scratch catches missing files and undocumented setup steps. Docker may reuse build layers; this check verifies a clean application checkout and fresh database, not a byte-identical rebuild of operating-system packages.
+
+A Compose project name separates a stack's network and named volumes. The verifier always chooses a new `phase7-*` name. It first recreates containers without deleting the volume to test persistence, then removes that disposable volume at the end. Using `down --volumes` on your normal project would erase its database. See [Compose project names](https://docs.docker.com/compose/how-tos/project-name/) and [volume removal](https://docs.docker.com/reference/cli/docker/compose/down/).
+
+PHPUnit's forced database settings select `db_test`; the bootstrap guard also checks the resolved Laravel configuration before `RefreshDatabase` can migrate anything. This second check matters because a cached configuration can bypass environment changes. CI intentionally tests that rejection against its disposable local database.
+
+Health checks have different scopes: `/healthz` checks Nginx, `/up` checks Laravel boot, and authenticated HTTP requests exercise sessions and PostgreSQL. Fetching compiled CSS/JavaScript proves those files are served; it does not prove browser layout or JavaScript interactions, which were checked separately in Phase 6.

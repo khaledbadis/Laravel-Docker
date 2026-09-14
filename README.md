@@ -2,7 +2,7 @@
 
 A learning project: manually assemble a Laravel, Livewire, Tailwind, and PostgreSQL todo app, then deploy it using Docker on self-managed infrastructure.
 
-**Current state:** Phase 6 is complete. The authenticated home page supports creating, editing, completing/reopening, and deleting your tasks, with filters and pagination.
+**Current state:** Phase 7 is complete and locally verified. CI and a disposable clean-setup verifier are implemented. The authenticated home page supports creating, editing, completing/reopening, and deleting your tasks, with filters and pagination.
 
 ## Project documents
 
@@ -59,7 +59,7 @@ docker compose exec app php artisan migrate --no-interaction
 docker compose run --rm --no-deps node npm ci
 docker compose run --rm --no-deps node npm run build
 docker compose ps
-curl --fail http://localhost:8080/up
+docker compose exec web wget -qO- http://127.0.0.1/up
 ```
 
 Open [http://localhost:8080](http://localhost:8080) to log in. Create a local account at `/register`, then add your first task. Use your configured port if you changed `WEB_PORT`. No host PHP, Composer, or Node is required.
@@ -196,7 +196,7 @@ docker compose exec app composer test
 docker compose stop db_test
 ```
 
-Do not run `migrate:fresh` against the regular `db` service. CI automation is added in Phase 7.
+Do not run `migrate:fresh` against the regular `db` service. The CI workflow below runs this suite against `db_test`.
 
 ## How Laravel was installed
 
@@ -210,7 +210,6 @@ The skeleton files were copied into the repository while preserving the existing
 
 ## Remaining operating instructions
 
-- **Phases 6–7:** task screens and CI.
 - **Phases 8–9:** production Compose, releases, HTTPS, backups, restore, and rollback.
 
 `compose.yaml` and the current PHP image are development-only. Production will use a separate Compose file and image targets.
@@ -236,3 +235,27 @@ Use the form to add a title and optional notes. Edit loads a task into the same 
 All, Active, and Completed show only your tasks, newest first, 20 per page. Changing filters resets the page. Deleting or completing the last matching task on a page moves to the last available page. Adding a task switches to All on page 1 so the new task is visible. Filters and unsaved edits reset on refresh; saved changes persist.
 
 Phase 6 verification: 48 tests / 299 assertions, Pint, and the frontend build pass. Browser checks cover task creation, editing, persistence after reload, status changes, filters, and deletion at desktop and mobile sizes.
+
+## CI and clean setup verification
+
+`.github/workflows/quality.yml` runs on pushes, pull requests, and manual dispatch using a GitHub-hosted Ubuntu runner. It has read-only repository permissions and needs no repository secrets. It builds the development PHP image, installs both lockfiles, runs the PostgreSQL tests and Pint, builds frontend assets, then checks HTTP behavior and persistence after container recreation. Production image validation will extend this in Phase 8.
+
+To run the same check locally, use a **separate fresh checkout** containing these scripts, on Linux with a non-root user, Bash, standard GNU utilities, Git, Docker, and Compose:
+
+```bash
+git clone <repository-url> laravel-todo-check
+cd laravel-todo-check
+bash scripts/verify.sh
+# If port 18080 is occupied, use this instead:
+# VERIFY_WEB_PORT=18081 bash scripts/verify.sh
+```
+
+The script refuses an existing `.env`, `vendor`, or `node_modules`. It generates an isolated `phase7-*` Compose project, creates fresh dependencies and database storage, and retains the same application key through recreation. On exit it prints recent container logs and removes only that project's containers, network, and volumes. Generated files and the local image remain for inspection; use another fresh checkout for a repeat run. Your normal `laravel-todo` database is separate. If Nginx reports `Permission denied`, check that the checkout directory is traversable by its container user; a directly bind-mounted `mktemp -d` directory normally has restrictive `0700` permissions. Clone into a normal subdirectory instead.
+
+The HTTP checks register a disposable account, verify private-file protection and compiled asset responses, and confirm the account, task, session, and cache survive `down` followed by `up`. They also verify logout CSRF protection and login. Livewire behavior is exercised by the component tests; this script does not automate a graphical browser.
+
+The test-isolation check deliberately caches the disposable local database configuration and expects PHPUnit's bootstrap guard to reject it before migrations run. The subsequent persistence check confirms the fixture remains intact. Avoid a cached configuration when running your normal development tests; `composer test` clears it automatically.
+
+Verified on 2026-09-14 from committed application `58fdafc` plus the new verification scripts: clean dependency installs, development image build, 48 tests / 299 assertions, Pint (42 files), HTTP checks, cached-configuration guard rejection, and user/task/session/cache persistence after container recreation all passed. Temporary containers, networks, and volumes were removed; the existing development stack stayed running.
+
+After committing and pushing the workflow, inspect **Actions → Quality → Docker tests and clean setup** on GitHub. A local pass verifies the script, but the first hosted workflow run still needs to pass after push.

@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phases 1–6 complete and verified. Next: Phase 7, quality and reproducibility. Phases 7–9 have not started.
+Status: Phases 1–7 complete and locally verified. Next: Phase 8, production images and deployment workflow. Phases 8–9 have not started. The first hosted CI run is pending commit/push.
 
 ## Purpose
 
@@ -146,10 +146,10 @@ Acceptance: all product requirements work in a browser at mobile and desktop siz
 
 ### Phase 7 — Quality and reproducibility
 
-- [ ] Run automated tests against isolated PostgreSQL, Laravel formatting checks, and the frontend production build.
-- [ ] Add CI for those checks, then image build validation.
-- [ ] Follow README.md from a clean checkout using fresh disposable volumes.
-- [ ] Check logs, health behavior, asset loading, authentication, and persistence during restart.
+- [x] Run automated tests against isolated PostgreSQL, Laravel formatting checks, and the frontend production build.
+- [x] Add CI for those checks, then image build validation.
+- [x] Follow README.md from a clean checkout using fresh disposable volumes.
+- [x] Check logs, health behavior, asset loading, authentication, and persistence during restart.
 
 Acceptance: documented setup works without undocumented host dependencies; all checks pass; automated tests cannot target the development or production database.
 
@@ -209,9 +209,10 @@ Compose files must have clearly documented invocation rules so development setti
 | 4 | Complete (2026-09-13) | 19 tests / 178 assertions; registration validation and toggle; login/password hashing; session and CSRF rotation; lockout expiry/reset and IP throttles; owner-only policy; HTTP CSRF and stale Livewire rejection after logout; forms inspected and frontend build passed |
 | 5 | Complete (2026-09-14) | 43 tests / 252 assertions; PostgreSQL task migration and constraints; owner-scoped service/policies; validation boundaries; completion/reopening/deletion; filtering/pagination; factories and guarded demo seeding; Pint passed; development migration applied and rerun idempotently |
 | 6 | Complete (2026-09-14) | Livewire task UI; 48 tests / 299 assertions; ownership and pagination boundary tests; Pint and Vite build passed; desktop/mobile browser lifecycle and reload persistence checked |
-| 7–9 | Not started | CI, production images, and deployment remain pending |
+| 7 | Complete (2026-09-14, local verification) | GitHub Actions workflow added; clean application archive of `58fdafc` plus new verification scripts, empty dependencies and fresh volumes; PHP image build, Composer validation/platform checks, npm ci/build, 48 tests / 299 assertions, Pint (42 files), HTTP authentication/assets, intentional cached-config rejection, and user/task/session/cache persistence after container recreation passed; disposable resources removed. Hosted CI awaits commit/push. |
+| 8–9 | Not started | Production images and deployment remain pending |
 
-Phase 6 leaves `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves the persistent task interface after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. Full clean-checkout and production-image rehearsals remain in Phases 7–8.
+Phase 7 leaves `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves the persistent task interface after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. The clean-checkout rehearsal passed without host PHP, Composer, or Node. The GitHub workflow has been checked locally; a hosted run will execute after commit/push. Production-image rehearsal remains in Phase 8.
 
 ## Official references
 
