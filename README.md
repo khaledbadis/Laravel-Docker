@@ -2,7 +2,7 @@
 
 A learning project: manually assemble a Laravel, Livewire, Tailwind, and PostgreSQL todo app, then deploy it using Docker on self-managed infrastructure.
 
-**Current state:** Phase 7 is complete and locally verified. CI and a disposable clean-setup verifier are implemented. The authenticated home page supports creating, editing, completing/reopening, and deleting your tasks, with filters and pagination.
+**Current state:** Phase 8 is complete and locally verified. Production images, deployment/rollback scripts, and CI publishing configuration are implemented. Real infrastructure rollout is Phase 9. The authenticated home page supports creating, editing, completing/reopening, and deleting your tasks, with filters and pagination.
 
 ## Project documents
 
@@ -210,9 +210,9 @@ The skeleton files were copied into the repository while preserving the existing
 
 ## Remaining operating instructions
 
-- **Phases 8–9:** production Compose, releases, HTTPS, backups, restore, and rollback.
+- **Phase 9:** real infrastructure rollout, HTTPS edge, scheduled backups and operational handoff.
 
-`compose.yaml` and the current PHP image are development-only. Production will use a separate Compose file and image targets.
+`compose.yaml` and `docker/php/Dockerfile` are development-only. Production uses `compose.production.yaml` and `docker/production/Dockerfile`.
 
 ## Verified environment
 
@@ -238,7 +238,7 @@ Phase 6 verification: 48 tests / 299 assertions, Pint, and the frontend build pa
 
 ## CI and clean setup verification
 
-`.github/workflows/quality.yml` runs on pushes, pull requests, and manual dispatch using a GitHub-hosted Ubuntu runner. It has read-only repository permissions and needs no repository secrets. It builds the development PHP image, installs both lockfiles, runs the PostgreSQL tests and Pint, builds frontend assets, then checks HTTP behavior and persistence after container recreation. Production image validation will extend this in Phase 8.
+`.github/workflows/quality.yml` runs on pushes, pull requests, and manual dispatch using a GitHub-hosted Ubuntu runner. It has read-only repository permissions and needs no repository secrets. It builds the development PHP image, installs both lockfiles, runs the PostgreSQL tests and Pint, builds frontend assets, then checks HTTP behavior and persistence after container recreation. It also builds and rehearses the production images.
 
 To run the same check locally, use a **separate fresh checkout** containing these scripts, on Linux with a non-root user, Bash, standard GNU utilities, Git, Docker, and Compose:
 
@@ -259,3 +259,76 @@ The test-isolation check deliberately caches the disposable local database confi
 Verified on 2026-09-14 from committed application `58fdafc` plus the new verification scripts: clean dependency installs, development image build, 48 tests / 299 assertions, Pint (42 files), HTTP checks, cached-configuration guard rejection, and user/task/session/cache persistence after container recreation all passed. Temporary containers, networks, and volumes were removed; the existing development stack stayed running.
 
 After committing and pushing the workflow, inspect **Actions → Quality → Docker tests and clean setup** on GitHub. A local pass verifies the script, but the first hosted workflow run still needs to pass after push.
+
+## Production releases (Phase 8)
+
+Use [GUIDE.md](GUIDE.md#phase-8-turning-a-checkout-into-a-production-release) for the detailed design, migration rules and recovery procedure. Production uses `compose.production.yaml` **alone**. Never combine it with the development Compose file.
+
+Build and rehearse locally on Linux (Docker, Compose, Bash, GNU utilities and `flock`):
+
+```bash
+export IMAGE_REPOSITORY=local-todo
+export RELEASE_SHA=$(git rev-parse HEAD)
+bash scripts/build-production.sh
+bash scripts/verify-production.sh
+```
+
+The rehearsal uses fresh, disposable volumes and localhost port 18081; override with `VERIFY_PRODUCTION_PORT=18082` if occupied. It validates HTTPS, secure sessions, a Livewire task creation, compiled assets, redeployment, database dump restoration, full-stack recreation, database-outage readiness, failed-deployment handling and the rollback command path. The local tag identifies the checked-out commit; uncommitted changes are included in a local build, so publish only from a committed CI checkout.
+
+For real releases, push the commit, then run **Actions → Publish production images → Run workflow** for the intended ref. Wait for verification and both GHCR pushes. The image names are `ghcr.io/<lowercase-owner>/<lowercase-repository>-app:<full-sha>` and the corresponding `-web:<full-sha>`. The workflow publishes images; it does not deploy to your infrastructure. Set package visibility or host pull credentials separately.
+
+Prepare a small deployment bundle from that release on your workstation:
+
+```bash
+tar -czf /tmp/little-list-deploy.tar.gz compose.production.yaml .env.production.example scripts/deploy.sh
+```
+
+Transfer/extract the bundle into a dedicated directory on the Docker VM, for example `/opt/apps/little-list`. The server does not need the source tree, PHP, Composer or Node. Use a non-root deployment account with Docker access; protect the directory and back up its configuration privately.
+
+```bash
+cp .env.production.example .env.production
+chmod 600 .env.production
+```
+
+Fill in the real `IMAGE_REPOSITORY`, HTTPS `APP_URL`, database credentials, stable project name, localhost port and trusted edge address. Generate a new installation's key with the published PHP image, then store the output as `APP_KEY` in the protected environment file:
+
+```bash
+# Replace both placeholders with the actual published values.
+docker run --rm --entrypoint php ghcr.io/OWNER/REPOSITORY-app:FULL_SHA \
+  -r 'echo "base64:".base64_encode(random_bytes(32)).PHP_EOL;'
+```
+
+Do this once per installation. Keep the same key on upgrades. Use a password manager to generate and retain the database password; do not reuse the development credentials.
+
+Deploy (substitute the full lowercase 40-character commit SHA):
+
+```bash
+bash scripts/deploy.sh .env.production FULL_SHA
+```
+
+The script creates a database dump in `backups/`, applies migrations and replaces the app. It writes `.release` only on success. A failure after ingress stops leaves it stopped for manual recovery; consult GUIDE.md. Expect brief downtime. `--local` is for already-built local rehearsal images and skips registry pulls; normal server deployments should pull.
+
+For subsequent operational commands, select the successful SHA explicitly:
+
+```bash
+export RELEASE_SHA=$(cat .release)
+docker compose --env-file .env.production -f compose.production.yaml ps
+docker compose --env-file .env.production -f compose.production.yaml logs --tail=100 app web db
+
+# Interactive prompts keep the password out of command history; signup stays closed.
+docker compose --env-file .env.production -f compose.production.yaml run --rm --no-deps app php artisan app:create-user
+```
+
+Configure the VM's HTTPS edge to forward the chosen domain to `127.0.0.1:8081` (or the selected port). The Compose network gateway is normally the source seen for a host-installed edge. Inspect it, configure `TRUSTED_PROXIES` narrowly, redeploy and confirm real client IP handling. Test the public HTTPS URL and task actions after every rollout.
+
+Rollback to a compatible previous image pair:
+
+```bash
+previous_sha=$(cat .previous-release)
+bash scripts/deploy.sh .env.production "$previous_sha" --rollback
+```
+
+After a failed release, `.release` still names the last successful release. `--rollback` skips migrations and never restores a database automatically. Verify schema compatibility first. Pre-release dumps remain on the same machine: schedule off-machine backups, secret protection and restore drills during Phase 9.
+
+
+Phase 8 verification (2026-09-14; documentation finalized 2026-09-16): 51 tests / 315 assertions and Pint (48 files) passed. Matching production images passed the HTTPS/Livewire rehearsal, backup restoration, session/task persistence across full recreation, database-outage readiness, and invalid-key failure/recovery checks. The rollback rehearsal used the same image pair; compatibility with a different release must be reviewed when it exists. Private hosting notes and environment files were absent from the app image. Temporary containers and volumes were removed. Images have not been pushed to GHCR and no real server deployment has been performed.

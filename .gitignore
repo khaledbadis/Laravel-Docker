@@ -19,3 +19,10 @@
 /storage/pail/
 /public/fonts-manifest.dev.json
 /_ide_helper.php
+
+/HOSTING.md
+/backups/
+/.release
+/.previous-release
+/.deploy.lock
+/.release.tmp

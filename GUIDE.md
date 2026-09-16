@@ -1,6 +1,6 @@
 # Laravel and Docker: project guide
 
-This guide explains the project design. Docker, Laravel, Livewire, Tailwind, authentication, and task screens are integrated; production deployment is the next stage. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
+This guide explains the project design. Docker, Laravel, Livewire, Tailwind, authentication, task screens, and production release tooling are integrated; rollout on the real infrastructure is the next stage. Runnable commands belong in [README.md](README.md); progress and acceptance checks belong in [PROJECT_SPEC.md](PROJECT_SPEC.md).
 
 ## What each tool does
 
@@ -225,3 +225,146 @@ A Compose project name separates a stack's network and named volumes. The verifi
 PHPUnit's forced database settings select `db_test`; the bootstrap guard also checks the resolved Laravel configuration before `RefreshDatabase` can migrate anything. This second check matters because a cached configuration can bypass environment changes. CI intentionally tests that rejection against its disposable local database.
 
 Health checks have different scopes: `/healthz` checks Nginx, `/up` checks Laravel boot, and authenticated HTTP requests exercise sessions and PostgreSQL. Fetching compiled CSS/JavaScript proves those files are served; it does not prove browser layout or JavaScript interactions, which were checked separately in Phase 6.
+
+## Phase 8: turning a checkout into a production release
+
+Development mounts your working directory into PHP and Nginx. Editing a file changes what the containers see immediately. Production instead runs a **built image**: a packaged filesystem containing a specific version of the application and its dependencies. Deploying means replacing containers with containers made from a selected image, while keeping persistent data separately.
+
+There are two production images per release:
+
+| Image | Contents and responsibility |
+| --- | --- |
+| `<repository>-app:<commit SHA>` | PHP-FPM, required PHP extensions, Laravel/Livewire code, production Composer dependencies and compiled assets |
+| `<repository>-web:<commit SHA>` | Nginx configuration and the same release's public files and compiled assets |
+
+Nginx handles HTTP and serves CSS/JavaScript directly. PHP-FPM executes Laravel's front controller. The public `index.php` exists in both images at the same path; Nginx sends that path to PHP-FPM rather than executing PHP itself. Both images must come from the **same commit**: mixing an old PHP component with new JavaScript or assets can break requests.
+
+The full Git commit SHA identifies the release. `build-production.sh` supplies it as the image tag and OCI revision label. `deploy.sh` checks both labels before modifying the running service. Treat published SHA tags as immutable: do not deliberately overwrite them with different code. Registry digests provide an even stronger content identity; record the push digests for important releases. The current release workflow builds Linux amd64 on an Ubuntu runner; add and verify other architectures before deploying to them.
+
+### How the multi-stage Dockerfile works
+
+`docker/production/Dockerfile` has several named stages. Docker can copy files from an earlier stage without including that stage's tools in the final image:
+
+1. **extensions** installs development headers and compiles PostgreSQL, internationalization, ZIP and OPcache extensions.
+2. **runtime** starts from the pinned PHP base again, installs only the runtime libraries needed by those extensions, and copies the compiled extensions. Production PHP settings disable displayed errors and enable OPcache.
+3. **dependencies** temporarily adds Composer, installs the exact locked dependencies with `--no-dev`, then copies the application and builds its optimized autoloader. It does not copy a developer's `vendor` directory.
+4. **assets** uses the pinned Node image, runs `npm ci`, and compiles Tailwind/Vite assets. It sees the production Laravel vendor files so Tailwind can discover pagination styles.
+5. **app** copies the application and built assets into the PHP runtime. Composer, Git and Node are not installed here.
+6. **web** copies only the public files and Nginx configuration into the Nginx base image.
+
+Development dependencies such as PHPUnit and Faker are absent from the PHP release. Build tools run on the build machine or CI runner; the deployment VM only pulls images. `.dockerignore` excludes local secrets, dependencies, generated caches, test scripts, documentation and the private hosting plan from the build context. This matters even for files that Git already ignores: Git exclusion and Docker exclusion are separate mechanisms.
+
+Copying dependency manifests before source files lets Docker reuse expensive install layers when only application code changes. Image digests and lockfiles pin the important inputs, but this is not a promise of byte-identical OS package rebuilds forever: apt repositories and tool behavior can still change. Validate every release build.
+
+### Why production Compose is a separate file
+
+Always select `compose.production.yaml` explicitly, on its own. Compose merges files when multiple `-f` options are provided, which could accidentally carry development source mounts, Vite or exposed ports into a release. The production file has no source bind mounts, build directives or Node service.
+
+Only Nginx publishes a host port, bound to `127.0.0.1`. PostgreSQL and PHP-FPM are reachable through the private application network, not through published host ports. Service names such as `db` and `app` are Docker DNS names; `localhost` inside PHP means the PHP container itself, not PostgreSQL or the VM.
+
+The VM's HTTPS edge proxy forwards to the localhost Nginx port. This keeps domain routing and certificates separate from an individual app's release. When another app is added, give it a different project name, port and environment file. Do not reuse this application's database credentials or encryption key.
+
+### Runtime configuration and the application key
+
+`.env.production` is an operator-managed file outside the images. Compose reads it for interpolation and injects the selected values as container environment variables. PHP does not need a mounted `.env` file. The production Compose file fixes `APP_ENV=production`, `APP_DEBUG=false` and secure cookies; the entrypoint also rejects an invalid key or a non-HTTPS application URL.
+
+Generate `APP_KEY` **once** for a new installation and retain it for all subsequent releases. It protects Laravel-encrypted values, including session cookies. Generating a new key during every deployment would invalidate sessions and can make other encrypted data unreadable. Back up the key securely together with the database credentials. Generating a key is different from rotating one; a planned rotation requires a separate procedure.
+
+Restrict `.env.production` to its owner. Environment variables are available to administrators with Docker access and may appear in `docker inspect` or expanded Compose configuration. Do not paste expanded configuration into public issues or CI logs. This first release uses a protected environment file; an external secret manager can replace it later without changing the principle of runtime injection.
+
+Changing an environment file does not edit a running container's environment. Recreate the app through the deployment script, even when using the same image SHA. Database initialization variables only create credentials for a new volume; editing `DB_PASSWORD` later does not change PostgreSQL's existing account password.
+
+### Caches, permissions and persistent files
+
+The PHP entrypoint prepares Laravel's configuration, route and Blade view caches **inside each container at startup**. It runs before PHP-FPM and before one-off Artisan commands. Caching at image build time would risk baking in the wrong environment, URLs or secrets. A migration container's cache is not reused by the web-serving container: each creates its own from the same runtime configuration.
+
+The app process runs as `www-data` (UID/GID 33), with a read-only root filesystem and no added Linux capabilities. Writable locations are explicit:
+
+| Location | Storage type | Lifetime |
+| --- | --- | --- |
+| `bootstrap/cache` | Per-container tmpfs owned by UID 33 | Rebuilt after container replacement |
+| `storage/framework` | Per-container tmpfs | Compiled views and temporary framework files |
+| `/tmp` | Per-container tmpfs | Temporary files only |
+| `storage/app` | Named `app_data` volume | Persists across container replacement |
+| PostgreSQL data directory | Named `postgres_data` volume | Accounts, tasks, sessions, cache and schema persist |
+
+Sessions and application cache use PostgreSQL, so losing the container's temporary filesystem does not log users out. The todo app does not currently offer uploads. If uploads are added, review storage routing, file permissions and backups; Nginx does not currently mount `app_data` to publish uploaded files.
+
+OPcache stores compiled PHP in memory and does not check source timestamps in production. That is appropriate because source files never change in a running release container. Replacing the container replaces the source and OPcache together. Editing code inside a production container is neither durable nor part of the deployment workflow.
+
+Laravel logs to stderr. Docker rotates each service's JSON logs at 10 MB, keeping three files. This bounds local log usage but is not a centralized audit/monitoring service. `restart: unless-stopped` restarts exited containers after crashes and daemon restarts; an unhealthy status alone does not make Docker restart a still-running process.
+
+### HTTPS and forwarded headers
+
+The edge terminates HTTPS and sends HTTP to the app's localhost Nginx port. Laravel forces generated production URLs to HTTPS, while secure cookies tell browsers to send the session cookie only over HTTPS.
+
+`TRUSTED_PROXIES` is a comma-separated list of exact proxy addresses or CIDRs. The custom middleware reads it from Laravel configuration after boot, so it also works with cached configuration. Only trusted senders may supply the forwarded client address and protocol. Forwarded host headers are not trusted. The edge should preserve the intended Host and overwrite untrusted forwarded headers.
+
+Correct client IP handling matters because login throttling is keyed partly by IP. If every visitor appears to be the edge, unrelated users can share a throttle bucket; if every sender is trusted, clients may spoof addresses. Determine the actual edge source address at deployment and verify it from the real public path. Avoid a wildcard trust setting.
+
+### Readiness versus a running container
+
+A process being alive does not prove the application works. Production checks several layers:
+
+- `/healthz` checks only Nginx.
+- `/up` boots Laravel and, in production, queries PostgreSQL through a `DiagnosingHealth` listener.
+- The PHP container health check verifies PostgreSQL connectivity and the local PHP-FPM listening socket.
+- The deployment script waits for healthy containers and fetches `/login`, exercising a real page and database-backed sessions.
+- The production rehearsal logs in over HTTPS, runs a Livewire action, fetches compiled assets and checks persistence.
+
+Internal readiness does not verify public DNS, the router, certificate renewal or the edge configuration. A deployment still needs an external HTTPS check and a real authenticated action. A database outage should make production readiness fail; showing an application error page is not a successful health check.
+
+### Publishing a release
+
+The ordinary **Quality** workflow validates both development setup and production images. **Publish production images** is a separate manually dispatched workflow: choose the intended ref, run the checks and production rehearsal, then push the matching app and web images to GHCR. It needs package-write permission only for publishing; it does not log in to or deploy to your server. Pull requests never run this publisher automatically.
+
+GHCR package visibility is independent of the Git repository. A private package requires a suitable read-only credential on the deployment VM; a public package can be pulled anonymously. The workflow uses its own short-lived GitHub token to publish. See [GitHub's publishing guide](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images) and [container registry access](https://docs.github.com/en/packages/working-with-a-github-packages-registry).
+
+If one image push succeeds and the other fails, the release is incomplete. Do not deploy until both names exist with the expected labels and the workflow passes. The deploy script pulls and checks both before stopping ingress. Do not use a moving `latest` tag to select a release.
+
+### What deploy.sh does, in order
+
+Run it from a dedicated release directory with its production Compose and protected environment file. It requires Bash, GNU utilities, `flock` and Docker Compose on the Linux host. The script accepts a full SHA, uses a lock to prevent overlapping deployments in that directory, and follows this sequence:
+
+1. Validate Compose, pull the selected images, and check app/web revision labels.
+2. Start PostgreSQL and wait for it to be healthy.
+3. Stop Nginx ingress. This creates a short maintenance window and prevents task writes while taking the backup and migrating. The edge may return 502/503 during this window; a branded maintenance page can be configured there later.
+4. Save a custom-format database dump under `backups/`, verify its archive listing, and rename the partial file only after success. On a first installation this is a backup of the newly initialized empty database.
+5. Run `php artisan migrate --force` using a one-off container from the **new app image**. This runs pending migrations only. It does not run `migrate:fresh`, seed demo data or generate a new application key.
+6. Recreate PHP-FPM and start Nginx, waiting for readiness. Their entrypoints prepare caches using runtime settings.
+7. Check the health and login endpoints, then update `.release` and retain the previous different SHA in `.previous-release`.
+
+`app:create-user` is an interactive Artisan command for the first account and later invitations by an operator. It uses the registration validation rules, normalizes the email, and stores a hashed password. The password prompts are hidden, so you do not need to put credentials in a shell command or temporarily open public signup.
+
+The current app has no queue workers or scheduler. If those are added, they must also be paused during this maintenance window and replaced with the matching release. Stopping Nginx alone would not stop background database writes.
+
+The database dump is stored on the deployment host, **outside the database volume but still on the same machine**. It protects against some release mistakes, not loss of the VM or disk. Phase 9 must schedule encrypted off-machine copies and restore drills. Protect the application volume and runtime secrets too when they contain important data.
+
+### Recovering a failed deployment
+
+Before ingress is stopped, a pull or revision-check failure leaves the existing service alone. After that point, a failure leaves ingress stopped and prints a recovery message. The script does not guess whether a partially applied migration can safely be reversed.
+
+Inspect the error and container logs using the failed release SHA and the same environment file. Determine whether migrations ran, whether the database is available, and whether the images/configuration are correct. Then choose one path:
+
+- Fix the configuration or release and rerun the normal deployment command. Migrations skip those already completed.
+- If the previous code is compatible with the current schema, deploy its matching image pair using `--rollback`. This takes another backup and replaces containers but intentionally skips migrations.
+- If the previous code cannot use the current schema, prefer a forward fix. Restoring a database backup is a deliberate recovery operation, not an automatic step; it may discard writes since that backup.
+
+Example compatible image rollback, from the deployment directory:
+
+```bash
+previous_sha=$(cat .previous-release)
+bash scripts/deploy.sh .env.production "$previous_sha" --rollback
+```
+
+After a failed release, `.release` still contains the last successful SHA; use that instead if appropriate. These files record local deployment history, not a guarantee of schema compatibility. Consult the release's migration changes before rolling back.
+
+Design migrations to allow rollback where practical: add a nullable column, deploy code that can handle old and new values, backfill, then remove old fields only in a later planned release. Dropping a column and immediately deploying code that depends on its absence can make old images unusable. Never assume `migrate:rollback` is safe for production data.
+
+### What the local production rehearsal proves
+
+`verify-production.sh` uses a unique `phase8-*` project with new volumes and a separate temporary deployment directory. It creates a short-lived TLS certificate and explicitly trusts that certificate in its HTTP client; it does not disable certificate verification. Only the rehearsal mounts the test edge's certificate/configuration. The real production Compose file has no such bind mounts.
+
+The check deploys built images, verifies production settings and runtime caches, signs in with secure cookies, creates a task through Livewire over HTTPS, redeploys, restores a data-bearing dump into an isolated database, then recreates the whole stack while retaining volumes. It checks that stopping PostgreSQL fails readiness and that an invalid-key deployment leaves ingress stopped with the last successful release recorded. It then exercises recovery through the rollback command with the same image pair. This last check verifies the command path; compatibility with a future, different release must be reviewed when that release exists.
+
+Temporary containers and volumes are removed afterward; the test's private environment and dump remain in its printed temporary directory for diagnosis. No real production credentials or development accounts are used. The first hosted CI/publishing runs and the real server deployment still need to occur after these changes are committed and pushed.

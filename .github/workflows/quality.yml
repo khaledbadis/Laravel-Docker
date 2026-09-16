@@ -16,7 +16,7 @@ jobs:
   verify:
     name: Docker tests and clean setup
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -24,3 +24,11 @@ jobs:
           persist-credentials: false
       - name: Verify from the lockfiles in Docker
         run: bash scripts/verify.sh
+      - name: Build and rehearse production images
+        env:
+          IMAGE_REPOSITORY: quality-local
+          RELEASE_SHA: ${{ github.sha }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          bash scripts/build-production.sh
+          bash scripts/verify-production.sh

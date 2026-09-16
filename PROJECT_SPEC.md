@@ -1,6 +1,6 @@
 # Laravel Docker Todo — project specification
 
-Status: Phases 1–7 complete and locally verified. Next: Phase 8, production images and deployment workflow. Phases 8–9 have not started. The first hosted CI run is pending commit/push.
+Status: Phases 1–8 complete and locally verified. Next: Phase 9, rollout on the real infrastructure. Production image publishing and hosted workflow verification await commit/push and manual release dispatch; no server rollout has been performed.
 
 ## Purpose
 
@@ -155,13 +155,15 @@ Acceptance: documented setup works without undocumented host dependencies; all c
 
 ### Phase 8 — Production images and deployment workflow
 
-- [ ] Add multi-stage production builds and an explicit production Compose configuration with no development bind mounts, Vite service, or exposed database port.
-- [ ] Build matching PHP and Nginx images tagged with the same commit SHA; configure a registry publishing workflow.
-- [ ] Inject production environment settings at runtime, keep a stable secret `APP_KEY`, disable debug, and use secure cookies over HTTPS.
-- [ ] Configure writable runtime storage, appropriate process permissions, log output/rotation, health checks, and restart policies.
-- [ ] Add a deployment script/runbook: back up, pull the release, run a one-off migration, prepare Laravel caches with runtime configuration, replace services, and verify health.
-- [ ] Define previous-image rollback and migration compatibility rules. Do not automatically roll back database migrations.
-- [ ] Rehearse production mode locally, including compiled assets and restart persistence.
+- [x] Add multi-stage production builds and an explicit production Compose configuration with no development bind mounts, Vite service, or exposed database port.
+- [x] Build matching PHP and Nginx images tagged with the same commit SHA; configure a registry publishing workflow.
+- [x] Inject production environment settings at runtime, keep a stable secret `APP_KEY`, disable debug, and use secure cookies over HTTPS.
+- [x] Configure writable runtime storage, appropriate process permissions, log output/rotation, health checks, and restart policies.
+- [x] Add a deployment script/runbook: back up, pull the release, run a one-off migration, prepare Laravel caches with runtime configuration, replace services, and verify health.
+- [x] Define previous-image rollback and migration compatibility rules. Do not automatically roll back database migrations.
+- [x] Rehearse production mode locally, including compiled assets and restart persistence.
+
+Phase 8 implementation: standalone production Compose; matching PHP/Nginx targets; manual GHCR publisher and production CI rehearsal; runtime cache/secret handling; owner-controlled account creation; database backup and guarded deployment/rollback scripts. The real HTTPS edge, registry visibility/pull access, and server setup remain Phase 9 tasks.
 
 Acceptance: a release runs from built images without source checkout or build tools on the server; application and web images match; deployment failure has a documented recovery path. Brief maintenance is acceptable; zero downtime is not a first-release requirement.
 
@@ -210,9 +212,10 @@ Compose files must have clearly documented invocation rules so development setti
 | 5 | Complete (2026-09-14) | 43 tests / 252 assertions; PostgreSQL task migration and constraints; owner-scoped service/policies; validation boundaries; completion/reopening/deletion; filtering/pagination; factories and guarded demo seeding; Pint passed; development migration applied and rerun idempotently |
 | 6 | Complete (2026-09-14) | Livewire task UI; 48 tests / 299 assertions; ownership and pagination boundary tests; Pint and Vite build passed; desktop/mobile browser lifecycle and reload persistence checked |
 | 7 | Complete (2026-09-14, local verification) | GitHub Actions workflow added; clean application archive of `58fdafc` plus new verification scripts, empty dependencies and fresh volumes; PHP image build, Composer validation/platform checks, npm ci/build, 48 tests / 299 assertions, Pint (42 files), HTTP authentication/assets, intentional cached-config rejection, and user/task/session/cache persistence after container recreation passed; disposable resources removed. Hosted CI awaits commit/push. |
-| 8–9 | Not started | Production images and deployment remain pending |
+| 8 | Complete (verification 2026-09-14; documentation finalized 2026-09-16) | Matching production PHP/Nginx images built locally; 51 tests / 315 assertions and Pint (48 files) passed; production Compose isolation and image exclusions checked; HTTPS login and Livewire task creation, assets, runtime caches, redeployment/session persistence, dump restoration, database-outage readiness, invalid-key deployment failure, full-stack recreation, and same-image rollback path passed. Disposable containers and volumes removed. GHCR workflow configured but not dispatched. |
+| 9 | Not started | Real infrastructure, HTTPS edge, scheduled off-machine backups, restore drills, and operational handoff remain pending |
 
-Phase 7 leaves `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves the persistent task interface after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot without a database probe. The clean-checkout rehearsal passed without host PHP, Composer, or Node. The GitHub workflow has been checked locally; a hosted run will execute after commit/push. Production-image rehearsal remains in Phase 8.
+Phase 8 verification left `app`, `db`, and `web` running with compiled assets and the tasks table migrated. Node and the disposable test database are stopped. Guests see login; the home page serves the persistent task interface after authentication. Local signup is enabled; demo seeding was tested only in isolation and has not added an account to the development database. Start `node` for hot reload as documented in README.md. `/healthz` checks Nginx only; `/up` checks Laravel boot in development and also queries PostgreSQL in production. The clean-checkout rehearsal passed without host PHP, Composer, or Node. Production images and deployment scripts passed the local rehearsal. The updated Quality workflow and manual GHCR publisher still require hosted runs after commit/push. The Proxmox hosting plan is a local-only document excluded from Git and Docker build contexts; Phase 9 has not been executed.
 
 ## Official references
 

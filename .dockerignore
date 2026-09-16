@@ -20,3 +20,14 @@ bootstrap/cache/*.php
 .idea
 .vscode
 *.log
+
+HOSTING.md
+backups
+.release
+.previous-release
+.deploy.lock
+scripts
+tests
+.github
+*.md
+.release.tmp

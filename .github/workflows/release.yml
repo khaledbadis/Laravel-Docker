@@ -1,0 +1,45 @@
+name: Publish production images
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check application
+        run: bash scripts/verify.sh
+      - name: Build and rehearse production images
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          SOURCE_URL: ${{ github.server_url }}/${{ github.repository }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          export IMAGE_REPOSITORY="ghcr.io/${REPOSITORY,,}"
+          bash scripts/build-production.sh
+          bash scripts/verify-production.sh
+      - name: Publish matching commit images
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+          REPOSITORY: ${{ github.repository }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+        run: |
+          registry_config=$(mktemp -d)
+          export DOCKER_CONFIG="$registry_config"
+          trap 'rm -rf "$registry_config"' EXIT
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          docker push "ghcr.io/${REPOSITORY,,}-app:$RELEASE_SHA"
+          docker push "ghcr.io/${REPOSITORY,,}-web:$RELEASE_SHA"
